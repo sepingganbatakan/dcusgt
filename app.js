@@ -939,6 +939,7 @@ async function initializeGuestApp() {
   } else {
     guestProfile = null;
     syncGuestProfileForm();
+    renderCheckupIdentitySummary();
     setActiveStep(1);
   }
   refreshIcons();
