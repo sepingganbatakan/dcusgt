@@ -1,4 +1,9 @@
-import { ALLOW_GUEST_CHECKUPS, SUPABASE_ANON_KEY, SUPABASE_URL } from "./config.js";
+import {
+  ALLOW_GUEST_CHECKUPS,
+  ALLOW_GUEST_EMPLOYEE_CREATION,
+  SUPABASE_ANON_KEY,
+  SUPABASE_URL
+} from "./config.js";
 
 const supabaseFactory = window.supabase?.createClient;
 const loginScreen = document.querySelector("#login-screen");
@@ -16,6 +21,7 @@ let currentUser;
 let currentProfile;
 let currentEmployeeId;
 let guestMode = false;
+let guestEmployeeCreationEnabled = false;
 let departments = [];
 let employees = [];
 let checkups = [];
@@ -160,11 +166,14 @@ function updateEmployeeOptions() {
     employeeSelect.innerHTML = '<option value="">Belum ada karyawan terdaftar</option>';
   }
   const addButton = document.querySelector("#open-employee-modal");
-  addButton.disabled = !departmentId || !isAdmin();
-  addButton.title = isAdmin() ? "Tambah karyawan" : "Hubungi HR untuk menambah karyawan";
+  const canAddEmployee = isAdmin() || (guestMode && ALLOW_GUEST_EMPLOYEE_CREATION && guestEmployeeCreationEnabled);
+  addButton.disabled = !departmentId || !canAddEmployee;
+  addButton.title = canAddEmployee ? "Tambah nama karyawan" : "Hubungi HR untuk menambahkan karyawan";
   document.querySelector("#employee-hint").textContent = isAdmin()
     ? "Karyawan baru dapat ditambahkan oleh HR/admin."
-    : "Tidak menemukan nama? Hubungi HR untuk menambahkan karyawan.";
+    : guestMode && canAddEmployee
+      ? "Nama belum ada? Tambahkan nama Anda sendiri."
+      : "Tidak menemukan nama? Hubungi HR untuk menambahkan karyawan.";
 }
 
 async function loadDepartments() {
@@ -478,7 +487,8 @@ async function submitCheckup(event) {
 
 async function addEmployee(event) {
   event.preventDefault();
-  if (!isAdmin()) {
+  const canAddAsGuest = guestMode && ALLOW_GUEST_EMPLOYEE_CREATION && guestEmployeeCreationEnabled;
+  if (!isAdmin() && !canAddAsGuest) {
     showToast("Hanya HR/admin yang dapat menambah master karyawan.", true);
     return;
   }
@@ -492,21 +502,43 @@ async function addEmployee(event) {
   const button = document.querySelector("#save-employee");
   setBusy(button, true, "Menyimpan…");
   try {
-    const { data, error } = await client
-      .from("employees")
-      .insert({
-        department_id: departmentId,
-        full_name: name
-      })
-      .select("id, department_id, full_name, is_active")
-      .single();
-    if (error) throw error;
-    employees.push(data);
+    let employee;
+    if (canAddAsGuest) {
+      const { data, error } = await client.rpc("add_guest_employee", {
+        p_department_id: departmentId,
+        p_full_name: name
+      });
+      if (error) throw error;
+      employee = Array.isArray(data) ? data[0] : data;
+      if (!employee?.employee_id) {
+        throw new Error("Respons penambahan nama tidak lengkap.");
+      }
+      employee = {
+        id: employee.employee_id,
+        department_id: employee.department_id,
+        full_name: employee.employee_name,
+        is_active: true
+      };
+    } else {
+      const { data, error } = await client
+        .from("employees")
+        .insert({
+          department_id: departmentId,
+          full_name: name
+        })
+        .select("id, department_id, full_name, is_active")
+        .single();
+      if (error) throw error;
+      employee = data;
+    }
+    if (!employees.some((existing) => existing.id === employee.id)) {
+      employees.push(employee);
+    }
     updateEmployeeOptions();
-    employeeSelect.value = data.id;
+    employeeSelect.value = employee.id;
     employeeModal.close();
     document.querySelector("#employee-form").reset();
-    showToast("Master karyawan berhasil disimpan.");
+    showToast(canAddAsGuest ? "Nama karyawan berhasil ditambahkan." : "Master karyawan berhasil disimpan.");
   } catch (error) {
     console.error("Employee save failed:", error);
     showToast(`Gagal menyimpan karyawan: ${error.message}`, true);
@@ -647,6 +679,13 @@ async function initializeGuestApp() {
     throw new Error("Mode tamu belum diaktifkan di Supabase. Lihat guest_mode.sql.");
   }
 
+  guestEmployeeCreationEnabled = false;
+  if (ALLOW_GUEST_EMPLOYEE_CREATION) {
+    const employeeSetting = await client.rpc("is_guest_employee_creation_enabled");
+    if (employeeSetting.error) throw employeeSetting.error;
+    guestEmployeeCreationEnabled = Boolean(employeeSetting.data);
+  }
+
   guestMode = true;
   currentUser = null;
   currentProfile = null;
@@ -771,10 +810,14 @@ function bindEvents() {
   });
   checkupForm.addEventListener("submit", submitCheckup);
   document.querySelector("#open-employee-modal").addEventListener("click", () => {
-    if (!isAdmin()) {
+    const canAddAsGuest = guestMode && ALLOW_GUEST_EMPLOYEE_CREATION && guestEmployeeCreationEnabled;
+    if (!isAdmin() && !canAddAsGuest) {
       showToast("Hubungi HR untuk menambahkan karyawan.", true);
       return;
     }
+    document.querySelector("#employee-modal-eyebrow").textContent = canAddAsGuest ? "TAMBAH NAMA" : "MASTER DATA";
+    document.querySelector("#employee-modal-title").textContent = canAddAsGuest ? "Tambahkan nama Anda" : "Tambah karyawan";
+    document.querySelector("#guest-employee-note").classList.toggle("hidden", !canAddAsGuest);
     const departmentName = departments.find((department) => department.id === departmentSelect.value)?.name ?? "";
     document.querySelector("#new-employee-department").textContent = `Departemen: ${departmentName}`;
     employeeModal.showModal();
