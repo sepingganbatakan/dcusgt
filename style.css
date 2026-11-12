@@ -365,6 +365,10 @@ button {
   backdrop-filter: blur(12px);
 }
 
+.guest-mode .bottom-nav {
+  grid-template-columns: repeat(2, 1fr);
+}
+
 .nav-item {
   display: flex;
   min-height: 49px;

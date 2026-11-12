@@ -96,6 +96,11 @@
                 <button id="open-employee-modal" class="secondary-button min-h-[46px] gap-1.5 px-2.5 text-[11px]" type="button" aria-label="Tambah karyawan baru" title="Tambah karyawan"><i data-lucide="user-plus"></i>Tambah</button>
               </div>
               <p id="employee-hint" class="mt-2 text-xs leading-5 text-slate-500"></p>
+              <div id="checkup-whatsapp-wrap" class="mt-4 hidden">
+                <label class="field-label" for="checkup-whatsapp">Nomor WhatsApp</label>
+                <input id="checkup-whatsapp" class="field-input mt-2" type="tel" inputmode="tel" autocomplete="tel" maxlength="24" placeholder="Contoh: 081234567890">
+                <p class="mt-1 text-xs text-slate-500">Disimpan hanya di browser/perangkat ini untuk checkup berikutnya.</p>
+              </div>
             </div>
             <button class="primary-button w-full" type="button" data-next>Selanjutnya <i data-lucide="arrow-right"></i></button>
           </section>
@@ -202,10 +207,35 @@
         <p class="mt-3 text-center text-xs leading-5 text-slate-500">Ekspor hanya mencakup data yang dapat diakses dan sesuai filter aktif.</p>
       </section>
 
+      <section id="profile-tab" class="tab-panel hidden px-5 pt-5" aria-labelledby="profile-heading">
+        <div class="mb-5">
+          <p class="eyebrow">PREFERENSI PERANGKAT</p>
+          <h1 id="profile-heading" class="mt-1 font-display text-2xl font-extrabold tracking-tight text-slate-900">Profil pengunjung</h1>
+          <p class="mt-1 text-sm leading-5 text-slate-500">Informasi ini diingat di browser ini agar checkup berikutnya lebih cepat.</p>
+        </div>
+        <form id="guest-profile-form" class="panel-card">
+          <label class="field-label" for="profile-department">Departemen</label>
+          <select id="profile-department" class="field-input mt-2" required>
+            <option value="">Pilih departemen</option>
+          </select>
+          <label class="field-label mt-4 block" for="profile-employee">Nama karyawan</label>
+          <select id="profile-employee" class="field-input mt-2" required disabled>
+            <option value="">Pilih departemen terlebih dahulu</option>
+          </select>
+          <button id="profile-add-employee" class="secondary-button mt-3 w-full" type="button"><i data-lucide="user-plus"></i> Nama belum ada? Tambahkan</button>
+          <label class="field-label mt-4 block" for="profile-whatsapp">Nomor WhatsApp</label>
+          <input id="profile-whatsapp" class="field-input mt-2" type="tel" inputmode="tel" autocomplete="tel" maxlength="24" placeholder="Contoh: 081234567890" required>
+          <p class="mt-2 text-xs leading-5 text-slate-500">Nomor WhatsApp tidak dikirim ke database. Profil tersimpan lokal di browser/perangkat ini.</p>
+          <button class="primary-button mt-5 w-full" type="submit"><i data-lucide="save"></i> Simpan profil</button>
+        </form>
+        <button id="clear-guest-profile" class="secondary-button mt-3 w-full" type="button"><i data-lucide="trash-2"></i> Hapus profil tersimpan di perangkat ini</button>
+      </section>
+
       <nav class="bottom-nav" aria-label="Navigasi utama">
         <button class="nav-item active" type="button" data-tab-target="checkup"><i data-lucide="clipboard-pen-line"></i><span>Checkup</span></button>
         <button class="nav-item" type="button" data-tab-target="history"><i data-lucide="history"></i><span>Riwayat</span></button>
         <button class="nav-item" type="button" data-tab-target="summary"><i data-lucide="chart-no-axes-column-increasing"></i><span>Ringkasan</span></button>
+        <button class="nav-item hidden" type="button" data-tab-target="profile"><i data-lucide="user-round"></i><span>Profile</span></button>
       </nav>
     </div>
 

@@ -15,6 +15,7 @@ const checkupForm = document.querySelector("#checkup-form");
 const resultCard = document.querySelector("#result-card");
 const employeeModal = document.querySelector("#employee-modal");
 const historyList = document.querySelector("#history-list");
+const guestProfileStorageKey = "daily-checkup-guest-profile-v1";
 
 let client;
 let currentUser;
@@ -22,6 +23,7 @@ let currentProfile;
 let currentEmployeeId;
 let guestMode = false;
 let guestEmployeeCreationEnabled = false;
+let guestProfile = null;
 let departments = [];
 let employees = [];
 let checkups = [];
@@ -71,6 +73,117 @@ function isAdmin() {
   return ["admin", "hr"].includes(currentProfile?.role);
 }
 
+function normalizeWhatsApp(value) {
+  const trimmed = value.trim();
+  const digits = trimmed.replace(/\D/g, "");
+  if (digits.startsWith("0")) return `+62${digits.slice(1)}`;
+  if (digits.startsWith("62")) return `+${digits}`;
+  return digits ? `+${digits}` : "";
+}
+
+function isValidWhatsApp(value) {
+  return /^\+[1-9]\d{7,14}$/.test(normalizeWhatsApp(value));
+}
+
+function readGuestProfile() {
+  try {
+    const stored = localStorage.getItem(guestProfileStorageKey);
+    if (!stored) return null;
+    const profile = JSON.parse(stored);
+    if (
+      typeof profile?.departmentId !== "string"
+      || typeof profile?.employeeId !== "string"
+      || typeof profile?.whatsapp !== "string"
+    ) {
+      localStorage.removeItem(guestProfileStorageKey);
+      return null;
+    }
+    return profile;
+  } catch (error) {
+    console.error("Could not read guest profile from this browser:", error);
+    showToast("Profil perangkat tidak dapat dibaca. Periksa pengaturan penyimpanan browser.", true);
+    return null;
+  }
+}
+
+function persistGuestProfile(profile, announce = false) {
+  guestProfile = {
+    departmentId: profile.departmentId,
+    employeeId: profile.employeeId,
+    whatsapp: normalizeWhatsApp(profile.whatsapp)
+  };
+  try {
+    localStorage.setItem(guestProfileStorageKey, JSON.stringify(guestProfile));
+    if (announce) showToast("Profil tersimpan di browser ini.");
+    return true;
+  } catch (error) {
+    console.error("Could not save guest profile to this browser:", error);
+    showToast("Profil gagal disimpan di browser. Periksa pengaturan penyimpanan.", true);
+    return false;
+  }
+}
+
+function populateDepartmentSelect(select, selectedId = "") {
+  select.innerHTML = '<option value="">Pilih departemen</option>';
+  for (const department of departments) {
+    const option = document.createElement("option");
+    option.value = department.id;
+    option.textContent = department.name;
+    select.append(option);
+  }
+  if (departments.some((department) => department.id === selectedId)) {
+    select.value = selectedId;
+  }
+}
+
+function updateProfileEmployeeOptions(selectedId = "") {
+  const departmentId = document.querySelector("#profile-department").value;
+  const select = document.querySelector("#profile-employee");
+  const employeeToSelect = selectedId || select.value;
+  const departmentEmployees = employees.filter((item) => item.department_id === departmentId && item.is_active);
+  select.innerHTML = '<option value="">Pilih nama karyawan</option>';
+  for (const employee of departmentEmployees) {
+    const option = document.createElement("option");
+    option.value = employee.id;
+    option.textContent = employee.full_name;
+    select.append(option);
+  }
+  if (!departmentId) {
+    select.innerHTML = '<option value="">Pilih departemen terlebih dahulu</option>';
+  } else if (!select.options.length || (select.options.length === 1 && !select.options[0].value)) {
+    select.innerHTML = '<option value="">Belum ada karyawan terdaftar</option>';
+  }
+  select.disabled = !departmentId || departmentEmployees.length === 0;
+  if (employees.some((item) => item.id === employeeToSelect && item.department_id === departmentId && item.is_active)) {
+    select.value = employeeToSelect;
+  }
+}
+
+function syncGuestProfileToCheckup() {
+  if (!guestProfile) return;
+  departmentSelect.value = guestProfile.departmentId;
+  updateEmployeeOptions();
+  employeeSelect.value = guestProfile.employeeId;
+  document.querySelector("#checkup-whatsapp").value = guestProfile.whatsapp;
+}
+
+function syncGuestProfileForm() {
+  if (!guestProfile) return;
+  const profileDepartment = document.querySelector("#profile-department");
+  populateDepartmentSelect(profileDepartment, guestProfile.departmentId);
+  updateProfileEmployeeOptions(guestProfile.employeeId);
+  document.querySelector("#profile-whatsapp").value = guestProfile.whatsapp;
+}
+
+function openEmployeeModal(departmentId, canAddAsGuest) {
+  document.querySelector("#employee-modal-eyebrow").textContent = canAddAsGuest ? "TAMBAH NAMA" : "MASTER DATA";
+  document.querySelector("#employee-modal-title").textContent = canAddAsGuest ? "Tambahkan nama Anda" : "Tambah karyawan";
+  document.querySelector("#guest-employee-note").classList.toggle("hidden", !canAddAsGuest);
+  const departmentName = departments.find((department) => department.id === departmentId)?.name ?? "";
+  document.querySelector("#new-employee-department").textContent = `Departemen: ${departmentName}`;
+  employeeModal.showModal();
+}
+
 function setBusy(button, busy, label) {
   if (!button) return;
   button.disabled = busy;
@@ -114,6 +227,27 @@ function validateStep(step) {
       showToast("Pilih nama karyawan untuk melanjutkan.", true);
       return false;
     }
+    if (guestMode) {
+      const whatsapp = document.querySelector("#checkup-whatsapp");
+      if (!whatsapp.value.trim()) {
+        whatsapp.setCustomValidity("Nomor WhatsApp wajib diisi.");
+        whatsapp.reportValidity();
+        whatsapp.setCustomValidity("");
+        return false;
+      }
+      if (!isValidWhatsApp(whatsapp.value)) {
+        whatsapp.setCustomValidity("Masukkan nomor WhatsApp yang valid, misalnya 081234567890.");
+        whatsapp.reportValidity();
+        whatsapp.setCustomValidity("");
+        return false;
+      }
+      persistGuestProfile({
+        departmentId: departmentSelect.value,
+        employeeId: employeeSelect.value,
+        whatsapp: whatsapp.value
+      });
+      syncGuestProfileForm();
+    }
   }
   if (step === 2) {
     const systolic = document.querySelector("#systolic");
@@ -148,7 +282,11 @@ function updateTemperatureDisplay() {
 }
 
 function updateEmployeeOptions() {
-  const departmentId = departmentSelect.value;
+  const departmentId = guestMode && document.querySelector("#profile-tab").classList.contains("hidden")
+    ? departmentSelect.value
+    : guestMode
+      ? document.querySelector("#profile-department").value
+      : departmentSelect.value;
   const departmentEmployees = employees.filter((employee) =>
     employee.department_id === departmentId && employee.is_active
   );
@@ -174,6 +312,7 @@ function updateEmployeeOptions() {
     : guestMode && canAddEmployee
       ? "Nama belum ada? Tambahkan nama Anda sendiri."
       : "Tidak menemukan nama? Hubungi HR untuk menambahkan karyawan.";
+  if (guestMode) updateProfileEmployeeOptions();
 }
 
 async function loadDepartments() {
@@ -217,13 +356,8 @@ async function loadGuestDirectory() {
     is_active: true
   })).sort((a, b) => a.full_name.localeCompare(b.full_name, "id"));
 
-  departmentSelect.innerHTML = '<option value="">Pilih departemen</option>';
-  for (const department of departments) {
-    const option = document.createElement("option");
-    option.value = department.id;
-    option.textContent = department.name;
-    departmentSelect.append(option);
-  }
+  populateDepartmentSelect(departmentSelect);
+  populateDepartmentSelect(document.querySelector("#profile-department"));
   updateEmployeeOptions();
 }
 
@@ -473,8 +607,12 @@ async function submitCheckup(event) {
     } else {
       updateEmployeeOptions();
     }
+    if (guestMode) {
+      syncGuestProfileToCheckup();
+      syncGuestProfileForm();
+    }
     updateTemperatureDisplay();
-    setActiveStep(1);
+    setActiveStep(guestMode ? 2 : 1);
     showToast("Checkup berhasil disimpan.");
     if (!guestMode) await loadCheckups();
   } catch (error) {
@@ -534,8 +672,26 @@ async function addEmployee(event) {
     if (!employees.some((existing) => existing.id === employee.id)) {
       employees.push(employee);
     }
+    departmentSelect.value = departmentId;
     updateEmployeeOptions();
     employeeSelect.value = employee.id;
+    if (guestMode) {
+      document.querySelector("#profile-department").value = departmentId;
+      updateProfileEmployeeOptions(employee.id);
+      const profileActive = !document.querySelector("#profile-tab").classList.contains("hidden");
+      const currentPhone = profileActive
+        ? document.querySelector("#profile-whatsapp").value
+        : document.querySelector("#checkup-whatsapp").value;
+      document.querySelector("#profile-whatsapp").value = currentPhone;
+      document.querySelector("#checkup-whatsapp").value = currentPhone;
+      if (currentPhone.trim()) {
+        persistGuestProfile({
+          departmentId,
+          employeeId: employee.id,
+          whatsapp: currentPhone
+        });
+      }
+    }
     employeeModal.close();
     document.querySelector("#employee-form").reset();
     showToast(canAddAsGuest ? "Nama karyawan berhasil ditambahkan." : "Master karyawan berhasil disimpan.");
@@ -587,7 +743,7 @@ function exportCsv() {
 }
 
 function setTab(tabName) {
-  if (guestMode && tabName !== "checkup") return;
+  if (guestMode && !["checkup", "profile"].includes(tabName)) return;
   document.querySelectorAll(".tab-panel").forEach((panel) => {
     panel.classList.toggle("hidden", panel.id !== `${tabName}-tab`);
   });
@@ -604,6 +760,7 @@ function setTab(tabName) {
 
 async function initializeApp(user) {
   guestMode = false;
+  guestProfile = null;
   currentUser = user;
   const signoutButton = document.querySelector("#signout-button");
   signoutButton.innerHTML = '<i data-lucide="log-out"></i>';
@@ -612,6 +769,10 @@ async function initializeApp(user) {
   signoutButton.classList.remove("hidden");
   refreshIcons();
   document.querySelectorAll("[data-tab-target]").forEach((button) => button.classList.remove("hidden"));
+  document.querySelector('[data-tab-target="profile"]').classList.add("hidden");
+  appShell.classList.remove("guest-mode");
+  document.querySelector("#checkup-whatsapp-wrap").classList.add("hidden");
+  document.querySelector("#checkup-whatsapp").required = false;
   document.querySelector("#guest-mode-notice").classList.add("hidden");
   const { data, error } = await client
     .from("account_profiles")
@@ -714,7 +875,32 @@ async function initializeGuestApp() {
   document.querySelectorAll("[data-tab-target]").forEach((button) => {
     if (button.dataset.tabTarget !== "checkup") button.classList.add("hidden");
   });
+  document.querySelector('[data-tab-target="profile"]').classList.remove("hidden");
+  appShell.classList.add("guest-mode");
+  document.querySelector("#profile-add-employee").disabled =
+    !ALLOW_GUEST_EMPLOYEE_CREATION || !guestEmployeeCreationEnabled;
+  document.querySelector("#checkup-whatsapp-wrap").classList.remove("hidden");
+  document.querySelector("#checkup-whatsapp").required = true;
   await loadGuestDirectory();
+  guestProfile = readGuestProfile();
+  if (
+    guestProfile
+    && departments.some((department) => department.id === guestProfile.departmentId)
+    && employees.some((employee) =>
+      employee.id === guestProfile.employeeId
+      && employee.department_id === guestProfile.departmentId
+      && employee.is_active
+    )
+    && isValidWhatsApp(guestProfile.whatsapp)
+  ) {
+    syncGuestProfileToCheckup();
+    syncGuestProfileForm();
+    setActiveStep(2);
+  } else {
+    guestProfile = null;
+    syncGuestProfileForm();
+    setActiveStep(1);
+  }
   refreshIcons();
 }
 
@@ -795,6 +981,61 @@ function bindEvents() {
     button.addEventListener("click", () => setActiveStep(Math.max(1, activeStep - 1)));
   });
   departmentSelect.addEventListener("change", updateEmployeeOptions);
+  document.querySelector("#checkup-whatsapp").addEventListener("input", () => {
+    if (guestMode && departmentSelect.value && employeeSelect.value && isValidWhatsApp(document.querySelector("#checkup-whatsapp").value)) {
+      persistGuestProfile({
+        departmentId: departmentSelect.value,
+        employeeId: employeeSelect.value,
+        whatsapp: document.querySelector("#checkup-whatsapp").value
+      });
+      syncGuestProfileForm();
+    }
+  });
+  document.querySelector("#profile-department").addEventListener("change", () => {
+    updateProfileEmployeeOptions();
+  });
+  document.querySelector("#profile-employee").addEventListener("change", () => {
+    const employee = employees.find((item) => item.id === document.querySelector("#profile-employee").value);
+    if (employee) {
+      document.querySelector("#profile-department").value = employee.department_id;
+    }
+  });
+  document.querySelector("#guest-profile-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const departmentId = document.querySelector("#profile-department").value;
+    const employeeId = document.querySelector("#profile-employee").value;
+    const whatsapp = document.querySelector("#profile-whatsapp").value;
+    if (!employees.some((employee) => employee.id === employeeId && employee.department_id === departmentId)) {
+      showToast("Pilih nama karyawan yang sesuai dengan departemen.", true);
+      return;
+    }
+    if (!isValidWhatsApp(whatsapp)) {
+      showToast("Masukkan nomor WhatsApp yang valid, misalnya 081234567890.", true);
+      return;
+    }
+    if (!persistGuestProfile({ departmentId, employeeId, whatsapp }, true)) return;
+    syncGuestProfileToCheckup();
+    setActiveStep(2);
+    setTab("checkup");
+  });
+  document.querySelector("#clear-guest-profile").addEventListener("click", () => {
+    try {
+      localStorage.removeItem(guestProfileStorageKey);
+      guestProfile = null;
+      departmentSelect.value = "";
+      updateEmployeeOptions();
+      document.querySelector("#checkup-whatsapp").value = "";
+      document.querySelector("#profile-department").value = "";
+      updateProfileEmployeeOptions();
+      document.querySelector("#profile-whatsapp").value = "";
+      setActiveStep(1);
+      setTab("checkup");
+      showToast("Profil perangkat berhasil dihapus.");
+    } catch (error) {
+      console.error("Could not clear guest profile from this browser:", error);
+      showToast("Profil gagal dihapus. Periksa pengaturan penyimpanan browser.", true);
+    }
+  });
   document.querySelector("#temperature").addEventListener("input", updateTemperatureDisplay);
   checkupForm.querySelectorAll('input[name="symptoms"]').forEach((input) => {
     input.addEventListener("change", () => {
@@ -815,12 +1056,22 @@ function bindEvents() {
       showToast("Hubungi HR untuk menambahkan karyawan.", true);
       return;
     }
-    document.querySelector("#employee-modal-eyebrow").textContent = canAddAsGuest ? "TAMBAH NAMA" : "MASTER DATA";
-    document.querySelector("#employee-modal-title").textContent = canAddAsGuest ? "Tambahkan nama Anda" : "Tambah karyawan";
-    document.querySelector("#guest-employee-note").classList.toggle("hidden", !canAddAsGuest);
-    const departmentName = departments.find((department) => department.id === departmentSelect.value)?.name ?? "";
-    document.querySelector("#new-employee-department").textContent = `Departemen: ${departmentName}`;
-    employeeModal.showModal();
+    const departmentId = guestMode && !document.querySelector("#profile-tab").classList.contains("hidden")
+      ? document.querySelector("#profile-department").value
+      : departmentSelect.value;
+    openEmployeeModal(departmentId, canAddAsGuest);
+  });
+  document.querySelector("#profile-add-employee").addEventListener("click", () => {
+    if (!guestMode || !ALLOW_GUEST_EMPLOYEE_CREATION || !guestEmployeeCreationEnabled) {
+      showToast("Penambahan nama belum diaktifkan.", true);
+      return;
+    }
+    const departmentId = document.querySelector("#profile-department").value;
+    if (!departmentId) {
+      showToast("Pilih departemen terlebih dahulu.", true);
+      return;
+    }
+    openEmployeeModal(departmentId, true);
   });
   document.querySelector("#close-employee-modal").addEventListener("click", () => employeeModal.close());
   employeeModal.addEventListener("click", (event) => {
