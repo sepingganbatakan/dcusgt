@@ -165,14 +165,53 @@ function syncGuestProfileToCheckup() {
   updateEmployeeOptions();
   employeeSelect.value = guestProfile.employeeId;
   document.querySelector("#checkup-whatsapp").value = guestProfile.whatsapp;
+  renderCheckupIdentitySummary();
+}
+
+function renderCheckupIdentitySummary() {
+  const summary = document.querySelector("#checkup-identity-summary");
+  const isSavedSelection = guestProfile
+    && departmentSelect.value === guestProfile.departmentId
+    && employeeSelect.value === guestProfile.employeeId
+    && normalizeWhatsApp(document.querySelector("#checkup-whatsapp").value) === guestProfile.whatsapp;
+  if (!isSavedSelection) {
+    summary.classList.add("hidden");
+    summary.classList.remove("flex");
+    return;
+  }
+
+  const employee = employees.find((item) => item.id === guestProfile.employeeId);
+  const department = departments.find((item) => item.id === guestProfile.departmentId);
+  if (!employee || !department) {
+    summary.classList.add("hidden");
+    summary.classList.remove("flex");
+    return;
+  }
+  document.querySelector("#checkup-identity-name").textContent = employee.full_name;
+  document.querySelector("#checkup-identity-department").textContent = department.name;
+  summary.classList.remove("hidden");
+  summary.classList.add("flex");
+}
+
+function saveCheckupIdentityIfComplete() {
+  if (!guestMode) return;
+  const whatsapp = document.querySelector("#checkup-whatsapp").value;
+  if (departmentSelect.value && employeeSelect.value && isValidWhatsApp(whatsapp)) {
+    persistGuestProfile({
+      departmentId: departmentSelect.value,
+      employeeId: employeeSelect.value,
+      whatsapp
+    });
+    syncGuestProfileForm();
+  }
+  renderCheckupIdentitySummary();
 }
 
 function syncGuestProfileForm() {
-  if (!guestProfile) return;
   const profileDepartment = document.querySelector("#profile-department");
-  populateDepartmentSelect(profileDepartment, guestProfile.departmentId);
-  updateProfileEmployeeOptions(guestProfile.employeeId);
-  document.querySelector("#profile-whatsapp").value = guestProfile.whatsapp;
+  populateDepartmentSelect(profileDepartment, guestProfile?.departmentId ?? "");
+  updateProfileEmployeeOptions(guestProfile?.employeeId ?? "");
+  document.querySelector("#profile-whatsapp").value = guestProfile?.whatsapp ?? "";
 }
 
 function openEmployeeModal(departmentId, canAddAsGuest) {
@@ -750,6 +789,7 @@ function setTab(tabName) {
   document.querySelectorAll(".nav-item").forEach((button) => {
     button.classList.toggle("active", button.dataset.tabTarget === tabName);
   });
+  if (guestMode && tabName === "profile") syncGuestProfileForm();
   if (tabName === "history" || tabName === "summary") {
     loadCheckups().catch((error) => {
       console.error("Checkup history load failed:", error);
@@ -981,15 +1021,19 @@ function bindEvents() {
     button.addEventListener("click", () => setActiveStep(Math.max(1, activeStep - 1)));
   });
   departmentSelect.addEventListener("change", updateEmployeeOptions);
+  departmentSelect.addEventListener("change", () => {
+    if (guestMode) saveCheckupIdentityIfComplete();
+  });
+  employeeSelect.addEventListener("change", () => {
+    if (guestMode) saveCheckupIdentityIfComplete();
+  });
+  document.querySelector("#edit-checkup-identity").addEventListener("click", () => {
+    if (!guestMode) return;
+    syncGuestProfileForm();
+    setTab("profile");
+  });
   document.querySelector("#checkup-whatsapp").addEventListener("input", () => {
-    if (guestMode && departmentSelect.value && employeeSelect.value && isValidWhatsApp(document.querySelector("#checkup-whatsapp").value)) {
-      persistGuestProfile({
-        departmentId: departmentSelect.value,
-        employeeId: employeeSelect.value,
-        whatsapp: document.querySelector("#checkup-whatsapp").value
-      });
-      syncGuestProfileForm();
-    }
+    saveCheckupIdentityIfComplete();
   });
   document.querySelector("#profile-department").addEventListener("change", () => {
     updateProfileEmployeeOptions();
