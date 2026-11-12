@@ -781,7 +781,7 @@ function exportCsv() {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function setTab(tabName) {
+function setTab(tabName, refreshData = true) {
   if (guestMode && !["checkup", "profile"].includes(tabName)) return;
   document.querySelectorAll(".tab-panel").forEach((panel) => {
     panel.classList.toggle("hidden", panel.id !== `${tabName}-tab`);
@@ -790,7 +790,7 @@ function setTab(tabName) {
     button.classList.toggle("active", button.dataset.tabTarget === tabName);
   });
   if (guestMode && tabName === "profile") syncGuestProfileForm();
-  if (tabName === "history" || tabName === "summary") {
+  if (refreshData && (tabName === "history" || tabName === "summary")) {
     loadCheckups().catch((error) => {
       console.error("Checkup history load failed:", error);
       showToast(`Gagal memuat riwayat: ${error.message}`, true);
@@ -845,6 +845,7 @@ async function initializeApp(user) {
   await loadDepartments();
   await loadEmployees();
   await loadCheckups();
+  setTab(isAdmin() ? "summary" : "checkup", false);
   if (realtimeChannel) await client.removeChannel(realtimeChannel);
   realtimeChannel = client
     .channel("checkup-changes")
