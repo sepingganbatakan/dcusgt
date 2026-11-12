@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f5f7fb">
+    <meta name="description" content="Daily Checkup — pencatatan kesiapan kerja harian.">
+    <title>Daily Checkup</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ["DM Sans", "sans-serif"],
+              display: ["Manrope", "sans-serif"]
+            }
+          }
+        }
+      };
+    </script>
+    <link rel="stylesheet" href="./style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+  </head>
+  <body class="min-h-screen bg-slate-50 font-sans text-slate-800 antialiased">
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <main id="login-screen" class="mx-auto hidden min-h-screen max-w-[480px] items-center px-5 py-10">
+      <section class="w-full rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+        <div class="mb-7 flex items-center gap-3">
+          <div class="brand-mark"><i data-lucide="heart-pulse"></i></div>
+          <div>
+            <p class="font-display text-lg font-extrabold tracking-tight text-slate-900">Daily Checkup</p>
+            <p class="text-sm text-slate-500">Masuk untuk memulai checkup</p>
+          </div>
+        </div>
+        <form id="login-form" class="space-y-4">
+          <label class="field-label" for="login-email">Email</label>
+          <input id="login-email" class="field-input -mt-2" type="email" autocomplete="username" required>
+          <label class="field-label" for="login-password">Password</label>
+          <input id="login-password" class="field-input -mt-2" type="password" autocomplete="current-password" required>
+          <button class="primary-button mt-2 w-full" type="submit">Masuk</button>
+        </form>
+        <button id="guest-mode-button" class="secondary-button mt-3 hidden w-full" type="button">Kembali ke input tanpa login</button>
+        <p class="mt-5 text-xs leading-5 text-slate-500">Akun disediakan oleh administrator. Data kesehatan hanya dapat diakses oleh pengguna yang berwenang.</p>
+      </section>
+    </main>
+
+    <div id="app-shell" class="mx-auto hidden min-h-screen max-w-[480px] bg-slate-50 pb-28">
+      <header class="sticky top-0 z-20 border-b border-slate-200/80 bg-slate-50/95 px-5 pb-4 pt-5 backdrop-blur">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="brand-mark small"><i data-lucide="heart-pulse"></i></div>
+            <div>
+              <p class="font-display text-base font-extrabold tracking-tight text-slate-900">Daily Checkup</p>
+              <p id="today-label" class="text-xs text-slate-500"></p>
+            </div>
+          </div>
+          <button id="signout-button" class="icon-button" type="button" aria-label="Keluar" title="Keluar"><i data-lucide="log-out"></i></button>
+        </div>
+      </header>
+
+      <section id="checkup-tab" class="tab-panel px-5 pt-5" aria-labelledby="checkup-heading">
+        <div class="mb-5">
+          <p class="eyebrow">PEMERIKSAAN HARIAN</p>
+          <h1 id="checkup-heading" class="mt-1 font-display text-2xl font-extrabold tracking-tight text-slate-900">Bagaimana kondisi Anda?</h1>
+          <p class="mt-1 text-sm text-slate-500">Isi checkup singkat sebelum memulai aktivitas.</p>
+          <p id="guest-mode-notice" class="mt-3 hidden rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">Mode tanpa login aktif. Pilihan nama karyawan dapat dilihat publik; hasil checkup tidak ditampilkan di riwayat pada perangkat ini.</p>
+        </div>
+        <div class="mb-5 rounded-2xl border border-slate-200 bg-white p-4">
+          <div class="mb-2 flex items-center justify-between text-xs font-semibold text-slate-500">
+            <span id="step-caption">LANGKAH 1 DARI 3</span><span id="step-percent">33%</span>
+          </div>
+          <div class="h-1.5 overflow-hidden rounded-full bg-slate-100"><div id="progress-bar" class="h-full rounded-full bg-blue-600 transition-all duration-300" style="width:33%"></div></div>
+        </div>
+
+        <form id="checkup-form" class="space-y-4">
+          <section class="checkup-step space-y-4" data-step="1">
+            <div class="panel-card">
+              <div class="mb-4 flex items-center gap-2"><i data-lucide="user-round" class="section-icon"></i><h2 class="section-title">Identitas</h2></div>
+              <label class="field-label" for="department-select">Departemen</label>
+              <select id="department-select" class="field-input mt-2" required>
+                <option value="">Pilih departemen</option>
+              </select>
+              <div class="mt-4 flex items-end gap-2">
+                <div class="min-w-0 flex-1">
+                  <label class="field-label" for="employee-select">Nama karyawan</label>
+                  <select id="employee-select" class="field-input mt-2" required disabled>
+                    <option value="">Pilih departemen terlebih dahulu</option>
+                  </select>
+                </div>
+                <button id="open-employee-modal" class="secondary-button min-h-[46px] gap-1.5 px-2.5 text-[11px]" type="button" aria-label="Tambah karyawan baru" title="Tambah karyawan"><i data-lucide="user-plus"></i>Tambah</button>
+              </div>
+              <p id="employee-hint" class="mt-2 text-xs leading-5 text-slate-500"></p>
+            </div>
+            <button class="primary-button w-full" type="button" data-next>Selanjutnya <i data-lucide="arrow-right"></i></button>
+          </section>
+
+          <section class="checkup-step hidden space-y-4" data-step="2">
+            <div class="panel-card">
+              <div class="mb-4 flex items-center gap-2"><i data-lucide="activity" class="section-icon"></i><h2 class="section-title">Kondisi fisik & vital</h2></div>
+              <p class="field-label">Tekanan darah <span class="font-normal text-slate-400">(mmHg)</span></p>
+              <div class="mt-2 grid grid-cols-2 gap-3">
+                <label><span class="sr-only">Sistolik</span><input id="systolic" class="field-input" type="number" min="50" max="260" inputmode="numeric" placeholder="Sistolik" required></label>
+                <label><span class="sr-only">Diastolik</span><input id="diastolic" class="field-input" type="number" min="30" max="160" inputmode="numeric" placeholder="Diastolik" required></label>
+              </div>
+              <div class="mt-5 flex items-center justify-between">
+                <label class="field-label" for="temperature">Suhu tubuh</label>
+                <span id="temperature-value" class="rounded-lg bg-blue-50 px-2.5 py-1 text-sm font-bold text-blue-700">36.5°C</span>
+              </div>
+              <input id="temperature" class="temperature-range mt-3 w-full" type="range" min="34" max="42" step="0.1" value="36.5" aria-label="Suhu tubuh">
+              <p id="temperature-hint" class="mt-1 text-xs text-slate-500">Geser untuk memilih suhu tubuh.</p>
+              <fieldset class="mt-5">
+                <legend class="field-label">Tingkat kelelahan</legend>
+                <div class="rating-options mt-2" data-rating="fatigue_level">
+                  <label class="rating-card"><input type="radio" name="fatigue_level" value="1" required><span><i data-lucide="battery-full"></i><b>1</b><small>Segar</small></span></label>
+                  <label class="rating-card"><input type="radio" name="fatigue_level" value="2"><span><i data-lucide="battery-medium"></i><b>2</b><small>Ringan</small></span></label>
+                  <label class="rating-card"><input type="radio" name="fatigue_level" value="3"><span><i data-lucide="battery-low"></i><b>3</b><small>Cukup</small></span></label>
+                  <label class="rating-card"><input type="radio" name="fatigue_level" value="4"><span><i data-lucide="battery-warning"></i><b>4</b><small>Lelah</small></span></label>
+                  <label class="rating-card"><input type="radio" name="fatigue_level" value="5"><span><i data-lucide="battery"></i><b>5</b><small>Sangat</small></span></label>
+                </div>
+              </fieldset>
+              <fieldset class="mt-5">
+                <legend class="field-label">Kualitas tidur</legend>
+                <div class="rating-options mt-2" data-rating="sleep_quality">
+                  <label class="rating-card"><input type="radio" name="sleep_quality" value="1" required><span><i data-lucide="moon-star"></i><b>1</b><small>Buruk</small></span></label>
+                  <label class="rating-card"><input type="radio" name="sleep_quality" value="2"><span><i data-lucide="moon"></i><b>2</b><small>Kurang</small></span></label>
+                  <label class="rating-card"><input type="radio" name="sleep_quality" value="3"><span><i data-lucide="cloud-moon"></i><b>3</b><small>Cukup</small></span></label>
+                  <label class="rating-card"><input type="radio" name="sleep_quality" value="4"><span><i data-lucide="moon"></i><b>4</b><small>Baik</small></span></label>
+                  <label class="rating-card"><input type="radio" name="sleep_quality" value="5"><span><i data-lucide="sparkles"></i><b>5</b><small>Nyenyak</small></span></label>
+                </div>
+              </fieldset>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <button class="secondary-button" type="button" data-prev><i data-lucide="arrow-left"></i> Kembali</button>
+              <button class="primary-button" type="button" data-next>Selanjutnya <i data-lucide="arrow-right"></i></button>
+            </div>
+          </section>
+
+          <section class="checkup-step hidden space-y-4" data-step="3">
+            <div class="panel-card">
+              <div class="mb-1 flex items-center gap-2"><i data-lucide="list-checks" class="section-icon"></i><h2 class="section-title">Gejala & kesiapan</h2></div>
+              <p class="mb-3 text-xs text-slate-500">Pilih semua kondisi yang Anda rasakan.</p>
+              <div class="symptom-list">
+                <label class="symptom-row"><span><b>Sehat / Fit</b><small>Merasa sehat dan siap beraktivitas</small></span><input type="checkbox" name="symptoms" value="fit" class="toggle-input"></label>
+                <label class="symptom-row"><span><b>Flu / Batuk</b><small>Termasuk pilek atau sakit tenggorokan</small></span><input type="checkbox" name="symptoms" value="flu_cough" class="toggle-input"></label>
+                <label class="symptom-row"><span><b>Pusing</b><small>Sakit kepala atau kepala terasa ringan</small></span><input type="checkbox" name="symptoms" value="dizziness" class="toggle-input"></label>
+                <label class="symptom-row"><span><b>Nyeri otot</b><small>Nyeri atau pegal yang mengganggu</small></span><input type="checkbox" name="symptoms" value="muscle_pain" class="toggle-input"></label>
+                <label class="symptom-row"><span><b>Sesak napas</b><small>Kesulitan bernapas</small></span><input type="checkbox" name="symptoms" value="breathing_difficulty" class="toggle-input"></label>
+                <label class="symptom-row"><span><b>Nyeri dada</b><small>Rasa tidak nyaman atau nyeri di dada</small></span><input type="checkbox" name="symptoms" value="chest_pain" class="toggle-input"></label>
+                <label class="symptom-row"><span><b>Pingsan / hampir pingsan</b><small>Kehilangan kesadaran atau terasa akan pingsan</small></span><input type="checkbox" name="symptoms" value="fainting" class="toggle-input"></label>
+              </div>
+              <label class="field-label mt-5 block" for="notes">Catatan tambahan <span class="font-normal text-slate-400">(opsional)</span></label>
+              <textarea id="notes" class="field-input mt-2 min-h-24 resize-y" maxlength="1000" placeholder="Tambahkan catatan bila diperlukan..."></textarea>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <button class="secondary-button" type="button" data-prev><i data-lucide="arrow-left"></i> Kembali</button>
+              <button id="submit-checkup" class="primary-button" type="submit">Simpan checkup <i data-lucide="check"></i></button>
+            </div>
+            <p class="px-1 text-center text-xs leading-5 text-slate-500">Hasil merupakan panduan operasional, bukan diagnosis medis.</p>
+          </section>
+        </form>
+        <section id="result-card" class="panel-card mt-5 hidden" aria-live="polite"></section>
+      </section>
+
+      <section id="history-tab" class="tab-panel hidden px-5 pt-5" aria-labelledby="history-heading">
+        <div class="mb-5">
+          <p class="eyebrow">CATATAN SEBELUMNYA</p>
+          <h1 id="history-heading" class="mt-1 font-display text-2xl font-extrabold tracking-tight text-slate-900">Riwayat checkup</h1>
+          <p class="mt-1 text-sm text-slate-500">Pantau catatan checkup yang dapat Anda akses.</p>
+        </div>
+        <div class="panel-card mb-4">
+          <div class="grid grid-cols-2 gap-3">
+            <label><span class="field-label">Dari tanggal</span><input id="filter-from" class="field-input mt-2" type="date"></label>
+            <label><span class="field-label">Sampai tanggal</span><input id="filter-to" class="field-input mt-2" type="date"></label>
+          </div>
+          <label id="history-department-wrap" class="mt-3 block"><span class="field-label">Departemen</span>
+            <select id="history-department" class="field-input mt-2"><option value="">Semua departemen</option></select>
+          </label>
+          <button id="apply-filters" class="secondary-button mt-4 w-full" type="button"><i data-lucide="list-filter"></i> Terapkan filter</button>
+        </div>
+        <div id="history-list" class="space-y-3"></div>
+      </section>
+
+      <section id="summary-tab" class="tab-panel hidden px-5 pt-5" aria-labelledby="summary-heading">
+        <div class="mb-5">
+          <p class="eyebrow">PANTAUAN</p>
+          <h1 id="summary-heading" class="mt-1 font-display text-2xl font-extrabold tracking-tight text-slate-900">Ringkasan</h1>
+          <p class="mt-1 text-sm text-slate-500">Ikhtisar berdasarkan riwayat yang dapat Anda akses.</p>
+        </div>
+        <div class="mb-4 grid grid-cols-2 gap-3">
+          <article class="stat-card"><span class="stat-icon blue"><i data-lucide="clipboard-check"></i></span><p class="stat-label">Total checkup</p><p id="stat-total" class="stat-value">—</p></article>
+          <article class="stat-card"><span class="stat-icon green"><i data-lucide="shield-check"></i></span><p class="stat-label">Fit to Work</p><p id="stat-fit" class="stat-value">—</p></article>
+          <article class="stat-card"><span class="stat-icon amber"><i data-lucide="eye"></i></span><p class="stat-label">Perlu observasi</p><p id="stat-observe" class="stat-value">—</p></article>
+          <article class="stat-card"><span class="stat-icon rose"><i data-lucide="heart-pulse"></i></span><p class="stat-label">Istirahat disarankan</p><p id="stat-rest" class="stat-value">—</p></article>
+        </div>
+        <button id="export-csv" class="primary-button w-full" type="button"><i data-lucide="download"></i> Ekspor riwayat ke CSV</button>
+        <p class="mt-3 text-center text-xs leading-5 text-slate-500">Ekspor hanya mencakup data yang dapat diakses dan sesuai filter aktif.</p>
+      </section>
+
+      <nav class="bottom-nav" aria-label="Navigasi utama">
+        <button class="nav-item active" type="button" data-tab-target="checkup"><i data-lucide="clipboard-pen-line"></i><span>Checkup</span></button>
+        <button class="nav-item" type="button" data-tab-target="history"><i data-lucide="history"></i><span>Riwayat</span></button>
+        <button class="nav-item" type="button" data-tab-target="summary"><i data-lucide="chart-no-axes-column-increasing"></i><span>Ringkasan</span></button>
+      </nav>
+    </div>
+
+    <dialog id="employee-modal" class="modal">
+      <form id="employee-form" class="modal-card">
+        <div class="mb-5 flex items-start justify-between">
+          <div><p class="eyebrow">MASTER DATA</p><h2 class="mt-1 font-display text-xl font-extrabold text-slate-900">Tambah karyawan</h2></div>
+          <button id="close-employee-modal" class="icon-button" type="button" aria-label="Tutup"><i data-lucide="x"></i></button>
+        </div>
+        <label class="field-label" for="new-employee-name">Nama lengkap</label>
+        <input id="new-employee-name" class="field-input mt-2" type="text" maxlength="120" required>
+        <p id="new-employee-department" class="mt-3 text-xs text-slate-500"></p>
+        <button id="save-employee" class="primary-button mt-5 w-full" type="submit">Simpan karyawan <i data-lucide="check"></i></button>
+      </form>
+    </dialog>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
