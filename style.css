@@ -401,12 +401,14 @@ button {
 .summary-filter-card {
   cursor: pointer;
   font: inherit;
-  transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+  transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
 }
 
 .summary-filter-card:hover {
-  border-color: #bfdbfe;
-  box-shadow: 0 5px 16px rgb(37 99 235 / 9%);
+  transform: translateY(-3px);
+  border-color: #93c5fd;
+  background-color: #f8fbff;
+  box-shadow: 0 8px 20px rgb(37 99 235 / 14%);
 }
 
 .summary-filter-card:active {
