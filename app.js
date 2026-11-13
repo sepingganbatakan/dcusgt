@@ -1498,6 +1498,7 @@ async function handleLogin(event) {
 async function handleSignOut() {
   if (guestMode) {
     guestMode = false;
+    guestProfile = null;
     await showLogin();
     return;
   }
@@ -1520,7 +1521,8 @@ async function handleSignOut() {
   checkups = [];
   historyList.replaceChildren();
   resultCard.replaceChildren();
-  await showLogin();
+  guestProfile = null;
+  await initializeGuestApp();
 }
 
 function bindEvents() {
