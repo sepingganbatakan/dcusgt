@@ -656,7 +656,11 @@ async function submitCheckup(event) {
     if (!guestMode) await loadCheckups();
   } catch (error) {
     console.error("Checkup save failed:", error);
-    showToast(`Checkup gagal disimpan: ${error.message}`, true);
+    if (error.code === "23505") {
+      showToast("Karyawan ini sudah mengisi checkup hari ini.", true);
+    } else {
+      showToast(`Checkup gagal disimpan: ${error.message}`, true);
+    }
   } finally {
     setBusy(button, false);
   }
