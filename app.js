@@ -388,7 +388,7 @@ async function loadGuestDirectory() {
     row.department_id,
     { id: row.department_id, name: row.department_name }
   ])).values()].sort((a, b) => a.name.localeCompare(b.name, "id"));
-  employees = directory.map((row) => ({
+  employees = directory.filter((row) => row.employee_id).map((row) => ({
     id: row.employee_id,
     department_id: row.department_id,
     full_name: row.employee_name,
