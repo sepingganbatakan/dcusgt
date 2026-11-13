@@ -1205,7 +1205,7 @@ function exportCsv() {
 
 function setTab(tabName, refreshData = true) {
   if (guestMode && !["checkup", "profile"].includes(tabName)) return;
-  if (!isAdmin() && tabName === "profile") return;
+  if (!isAdmin() && tabName === "profile" && !guestMode) return;
   if (tabName === "summary") {
     document.querySelector("#history-readiness").value = "";
   }
@@ -1573,7 +1573,7 @@ function bindEvents() {
   employeeSelect.addEventListener("change", checkSelectedGuestDailyStatus);
   document.querySelector("#edit-checkup-identity").addEventListener("click", () => {
     if (guestMode) {
-      syncGuestProfileForm();
+      setTab("profile");
     } else if (isAdmin()) {
       setTab("profile");
     }
