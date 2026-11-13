@@ -190,6 +190,14 @@
           <label id="history-department-wrap" class="mt-3 block"><span class="field-label">Departemen</span>
             <select id="history-department" class="field-input mt-2"><option value="">Semua departemen</option></select>
           </label>
+          <label class="mt-3 block"><span class="field-label">Status kesiapan</span>
+            <select id="history-readiness" class="field-input mt-2">
+              <option value="">Semua status</option>
+              <option value="fit_to_work">Fit to Work</option>
+              <option value="need_observation">Perlu observasi</option>
+              <option value="rest_recommended">Istirahat disarankan</option>
+            </select>
+          </label>
           <button id="apply-filters" class="secondary-button mt-4 w-full" type="button"><i data-lucide="list-filter"></i> Terapkan filter</button>
         </div>
         <div id="history-list" class="space-y-3"></div>
@@ -202,7 +210,7 @@
           <p class="mt-1 text-sm text-slate-500">Ikhtisar berdasarkan riwayat yang dapat Anda akses.</p>
         </div>
         <div class="mb-4 grid grid-cols-2 gap-3">
-          <article id="daily-coverage-card" class="stat-card daily-coverage-card col-span-2">
+          <button id="daily-coverage-card" class="stat-card daily-coverage-card summary-filter-card col-span-2 w-full text-left" data-summary-filter="today" type="button" aria-label="Lihat riwayat checkup hari ini">
             <div class="flex items-start justify-between gap-3">
               <div>
                 <p class="stat-label mt-0">Checkup hari ini / karyawan aktif</p>
@@ -218,10 +226,10 @@
                 <div id="stat-coverage-bar" class="h-full rounded-full bg-blue-600 transition-all duration-300" style="width:0%"></div>
               </div>
             </div>
-          </article>
-          <article class="stat-card"><span class="stat-icon green"><i data-lucide="shield-check"></i></span><p class="stat-label">Fit to Work</p><p id="stat-fit" class="stat-value">—</p></article>
-          <article class="stat-card"><span class="stat-icon amber"><i data-lucide="eye"></i></span><p class="stat-label">Perlu observasi</p><p id="stat-observe" class="stat-value">—</p></article>
-          <article class="stat-card"><span class="stat-icon rose"><i data-lucide="heart-pulse"></i></span><p class="stat-label">Istirahat disarankan</p><p id="stat-rest" class="stat-value">—</p></article>
+          </button>
+          <button class="stat-card summary-filter-card w-full text-left" data-summary-filter="fit_to_work" type="button" aria-label="Lihat riwayat Fit to Work"><span class="stat-icon green"><i data-lucide="shield-check"></i></span><p class="stat-label">Fit to Work</p><p id="stat-fit" class="stat-value">—</p></button>
+          <button class="stat-card summary-filter-card w-full text-left" data-summary-filter="need_observation" type="button" aria-label="Lihat riwayat yang perlu observasi"><span class="stat-icon amber"><i data-lucide="eye"></i></span><p class="stat-label">Perlu observasi</p><p id="stat-observe" class="stat-value">—</p></button>
+          <button class="stat-card summary-filter-card w-full text-left" data-summary-filter="rest_recommended" type="button" aria-label="Lihat riwayat istirahat disarankan"><span class="stat-icon rose"><i data-lucide="heart-pulse"></i></span><p class="stat-label">Istirahat disarankan</p><p id="stat-rest" class="stat-value">—</p></button>
         </div>
         <button id="export-csv" class="primary-button w-full" type="button"><i data-lucide="download"></i> Ekspor riwayat ke CSV</button>
         <p class="mt-3 text-center text-xs leading-5 text-slate-500">Ekspor hanya mencakup data yang dapat diakses dan sesuai filter aktif.</p>

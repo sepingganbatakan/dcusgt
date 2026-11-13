@@ -398,6 +398,26 @@ button {
   padding: 14px;
 }
 
+.summary-filter-card {
+  cursor: pointer;
+  font: inherit;
+  transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+}
+
+.summary-filter-card:hover {
+  border-color: #bfdbfe;
+  box-shadow: 0 5px 16px rgb(37 99 235 / 9%);
+}
+
+.summary-filter-card:active {
+  transform: translateY(1px);
+}
+
+.summary-filter-card:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
 .daily-coverage-card {
   min-height: 142px;
   padding: 17px;

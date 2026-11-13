@@ -112,6 +112,13 @@ function jakartaDateRange() {
   return { start: start.toISOString(), end: end.toISOString() };
 }
 
+function jakartaDateRangeForDate(date) {
+  const [year, month, day] = date.split("-").map(Number);
+  const start = new Date(Date.UTC(year, month - 1, day, -7));
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  return { start: start.toISOString(), end: end.toISOString() };
+}
+
 function isValidWhatsApp(value) {
   return /^\+[1-9]\d{7,14}$/.test(normalizeWhatsApp(value));
 }
@@ -508,7 +515,8 @@ function getHistoryFilters() {
   return {
     from: document.querySelector("#filter-from").value,
     to: document.querySelector("#filter-to").value,
-    departmentId: document.querySelector("#history-department").value
+    departmentId: document.querySelector("#history-department").value,
+    readinessStatus: document.querySelector("#history-readiness").value
   };
 }
 
@@ -526,15 +534,15 @@ async function loadCheckups() {
     throw new Error("Tanggal awal tidak boleh melewati tanggal akhir.");
   }
   if (filters.from) {
-    const from = new Date(`${filters.from}T00:00:00`);
-    query = query.gte("checked_at", from.toISOString());
+    const { start } = jakartaDateRangeForDate(filters.from);
+    query = query.gte("checked_at", start);
   }
   if (filters.to) {
-    const toExclusive = new Date(`${filters.to}T00:00:00`);
-    toExclusive.setDate(toExclusive.getDate() + 1);
-    query = query.lt("checked_at", toExclusive.toISOString());
+    const { end } = jakartaDateRangeForDate(filters.to);
+    query = query.lt("checked_at", end);
   }
   if (filters.departmentId) query = query.eq("employees.department_id", filters.departmentId);
+  if (filters.readinessStatus) query = query.eq("readiness_status", filters.readinessStatus);
 
   const { data, error } = await query;
   if (error) {
@@ -903,6 +911,9 @@ function exportCsv() {
 
 function setTab(tabName, refreshData = true) {
   if (guestMode && !["checkup", "profile"].includes(tabName)) return;
+  if (tabName === "summary") {
+    document.querySelector("#history-readiness").value = "";
+  }
   document.querySelectorAll(".tab-panel").forEach((panel) => {
     panel.classList.toggle("hidden", panel.id !== `${tabName}-tab`);
   });
@@ -916,6 +927,40 @@ function setTab(tabName, refreshData = true) {
       showToast(`Gagal memuat riwayat: ${error.message}`, true);
     });
   }
+}
+
+function jakartaToday() {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(new Date());
+  const dateParts = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
+}
+
+function openSummaryFilter(filter) {
+  const fromInput = document.querySelector("#filter-from");
+  const toInput = document.querySelector("#filter-to");
+  const departmentInput = document.querySelector("#history-department");
+  const readinessInput = document.querySelector("#history-readiness");
+
+  if (filter === "today") {
+    const today = jakartaToday();
+    fromInput.value = today;
+    toInput.value = today;
+    departmentInput.value = "";
+    readinessInput.value = "";
+  } else {
+    readinessInput.value = filter;
+  }
+
+  setTab("history", false);
+  loadCheckups().catch((error) => {
+    console.error("Summary card history filter failed:", error);
+    showToast(`Gagal memuat riwayat: ${error.message}`, true);
+  });
 }
 
 async function initializeApp(user) {
@@ -1315,6 +1360,21 @@ function bindEvents() {
       console.error("Checkup filter failed:", error);
       showToast(`Gagal memuat filter: ${error.message}`, true);
     });
+  });
+  document.querySelector("#history-department").addEventListener("change", () => {
+    loadCheckups().catch((error) => {
+      console.error("Department filter failed:", error);
+      showToast(`Gagal memuat filter departemen: ${error.message}`, true);
+    });
+  });
+  document.querySelector("#history-readiness").addEventListener("change", () => {
+    loadCheckups().catch((error) => {
+      console.error("Readiness filter failed:", error);
+      showToast(`Gagal memuat filter status: ${error.message}`, true);
+    });
+  });
+  document.querySelectorAll("[data-summary-filter]").forEach((card) => {
+    card.addEventListener("click", () => openSummaryFilter(card.dataset.summaryFilter));
   });
   document.querySelector("#export-csv").addEventListener("click", exportCsv);
 }
