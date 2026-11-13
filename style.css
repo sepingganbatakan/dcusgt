@@ -292,6 +292,33 @@ button {
   border-bottom: 0;
 }
 
+.fit-symptom-row {
+  min-height: 72px;
+  background: #f0fdf4;
+  box-shadow: inset 3px 0 #16a34a;
+}
+
+.fit-symptom-row b {
+  color: #166534;
+}
+
+.fit-self-assessment {
+  display: inline-block;
+  margin-left: 5px;
+  border-radius: 999px;
+  background: #dcfce7;
+  padding: 2px 6px;
+  color: #15803d;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  vertical-align: 1px;
+}
+
+.fit-symptom-row small {
+  color: #3f6b4c;
+}
+
 .symptom-row b,
 .symptom-row small {
   display: block;
@@ -523,6 +550,53 @@ button {
 .result-card.result-fit { border-color: #bbf7d0; background: linear-gradient(135deg, #ecfdf5, #fff 75%); }
 .result-card.result-observe { border-color: #fde68a; background: linear-gradient(135deg, #fffbeb, #fff 75%); }
 .result-card.result-rest { border-color: #fecdd3; background: linear-gradient(135deg, #fff1f2, #fff 75%); }
+
+.daily-checkup-notice {
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid #a7f3d0;
+  border-radius: 14px;
+  background: #ecfdf5;
+  padding: 12px 14px;
+  color: #166534;
+}
+
+.daily-checkup-notice:not(.hidden) {
+  display: flex;
+}
+
+.daily-checkup-notice > svg {
+  width: 19px;
+  height: 19px;
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.daily-checkup-notice p,
+.daily-checkup-notice span {
+  display: block;
+}
+
+.daily-checkup-notice p {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.daily-checkup-notice span {
+  margin-top: 2px;
+  color: #3f6b4c;
+  font-size: 11px;
+}
+
+.daily-checkup-status-loading {
+  border: 1px solid #bfdbfe;
+  border-radius: 14px;
+  background: #eff6ff;
+  padding: 12px 14px;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 600;
+}
 
 .toast {
   position: fixed;

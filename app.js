@@ -17,6 +17,7 @@ const resultCard = document.querySelector("#result-card");
 const employeeModal = document.querySelector("#employee-modal");
 const historyList = document.querySelector("#history-list");
 const guestProfileStorageKey = "daily-checkup-guest-profile-v1";
+const checkupDraftStoragePrefix = "daily-checkup-draft-v1";
 
 let client;
 let currentUser;
@@ -33,6 +34,8 @@ let activeEmployeeCount = null;
 let activeStep = 1;
 let toastTimeout;
 let realtimeChannel;
+let draftStorageErrorNotified = false;
+let guestStatusRequest = 0;
 
 const statusDetails = {
   fit_to_work: { label: "Fit to Work", pill: "status-fit", result: "result-fit", icon: "shield-check" },
@@ -117,6 +120,171 @@ function jakartaDateRangeForDate(date) {
   const start = new Date(Date.UTC(year, month - 1, day, -7));
   const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
   return { start: start.toISOString(), end: end.toISOString() };
+}
+
+function checkupDraftScope() {
+  const identity = guestMode ? guestProfile?.deviceToken : currentUser?.id;
+  if (!identity) return null;
+  return `${checkupDraftStoragePrefix}:${guestMode ? "guest" : "user"}:${identity}`;
+}
+
+function reportDraftStorageError(action, error) {
+  console.error(`Could not ${action} local checkup draft:`, error);
+  if (!draftStorageErrorNotified) {
+    showToast("Draft checkup tidak dapat disimpan atau dibaca di browser ini. Periksa pengaturan penyimpanan.", true);
+    draftStorageErrorNotified = true;
+  }
+}
+
+function resetCheckupResponses() {
+  document.querySelector("#systolic").value = "";
+  document.querySelector("#diastolic").value = "";
+  document.querySelector("#temperature").value = "36.5";
+  document.querySelector("#notes").value = "";
+  checkupForm.querySelectorAll('input[name="fatigue_level"], input[name="sleep_quality"], input[name="symptoms"]')
+    .forEach((input) => { input.checked = false; });
+  updateTemperatureDisplay();
+  setActiveStep(1);
+}
+
+function persistCheckupSelection() {
+  const scope = checkupDraftScope();
+  if (!scope) return;
+  try {
+    localStorage.setItem(`${scope}:selection`, JSON.stringify({
+      departmentId: departmentSelect.value,
+      employeeId: employeeSelect.value
+    }));
+    draftStorageErrorNotified = false;
+  } catch (error) {
+    reportDraftStorageError("save", error);
+  }
+}
+
+function restoreCheckupSelection() {
+  if (!isAdmin()) return;
+  const scope = checkupDraftScope();
+  if (!scope) return;
+  departmentSelect.value = "";
+  updateEmployeeOptions();
+  try {
+    const stored = localStorage.getItem(`${scope}:selection`);
+    if (!stored) return;
+    const selection = JSON.parse(stored);
+    const employee = employees.find((item) =>
+      item.id === selection.employeeId
+      && item.department_id === selection.departmentId
+    );
+    if (!employee) return;
+    departmentSelect.value = employee.department_id;
+    updateEmployeeOptions();
+    employeeSelect.value = employee.id;
+  } catch (error) {
+    reportDraftStorageError("read", error);
+  }
+}
+
+function saveCheckupDraft() {
+  const scope = checkupDraftScope();
+  const employeeId = employeeSelect.value;
+  if (!scope || !employeeId) return;
+  const symptoms = Object.fromEntries(
+    [...checkupForm.querySelectorAll('input[name="symptoms"]')].map((input) => [input.value, input.checked])
+  );
+  const draft = {
+    savedOn: jakartaToday(),
+    departmentId: departmentSelect.value,
+    employeeId,
+    systolic: document.querySelector("#systolic").value,
+    diastolic: document.querySelector("#diastolic").value,
+    temperature: document.querySelector("#temperature").value,
+    fatigueLevel: checkupForm.querySelector('input[name="fatigue_level"]:checked')?.value ?? "",
+    sleepQuality: checkupForm.querySelector('input[name="sleep_quality"]:checked')?.value ?? "",
+    symptoms,
+    notes: document.querySelector("#notes").value,
+    step: activeStep
+  };
+  try {
+    localStorage.setItem(`${scope}:employee:${employeeId}`, JSON.stringify(draft));
+    draftStorageErrorNotified = false;
+  } catch (error) {
+    reportDraftStorageError("save", error);
+  }
+}
+
+function isCheckupDraftField(target) {
+  return ["systolic", "diastolic", "temperature", "notes"].includes(target?.id)
+    || ["fatigue_level", "sleep_quality", "symptoms"].includes(target?.name);
+}
+
+function restoreCheckupDraft(employeeId) {
+  resetCheckupResponses();
+  const scope = checkupDraftScope();
+  if (!scope || !employeeId) return false;
+  const key = `${scope}:employee:${employeeId}`;
+  let draft;
+  try {
+    const stored = localStorage.getItem(key);
+    if (!stored) return false;
+    draft = JSON.parse(stored);
+    if (draft.savedOn !== jakartaToday()) {
+      localStorage.removeItem(key);
+      return false;
+    }
+    draftStorageErrorNotified = false;
+  } catch (error) {
+    reportDraftStorageError("read", error);
+    return false;
+  }
+  if (
+    draft.employeeId !== employeeId
+    || draft.departmentId !== departmentSelect.value
+  ) return false;
+
+  document.querySelector("#systolic").value = draft.systolic ?? "";
+  document.querySelector("#diastolic").value = draft.diastolic ?? "";
+  const temperature = Number(draft.temperature);
+  if (Number.isFinite(temperature) && temperature >= 34 && temperature <= 42) {
+    document.querySelector("#temperature").value = String(temperature);
+  }
+  for (const [name, value] of [["fatigue_level", draft.fatigueLevel], ["sleep_quality", draft.sleepQuality]]) {
+    if (["1", "2", "3", "4", "5"].includes(String(value))) {
+      const input = checkupForm.querySelector(`input[name="${name}"][value="${value}"]`);
+      if (input) input.checked = true;
+    }
+  }
+  checkupForm.querySelectorAll('input[name="symptoms"]').forEach((input) => {
+    input.checked = Boolean(draft.symptoms?.[input.value]);
+  });
+  document.querySelector("#notes").value = typeof draft.notes === "string" ? draft.notes : "";
+  updateTemperatureDisplay();
+  setActiveStep(Number.isInteger(draft.step) && draft.step >= 1 && draft.step <= 3 ? draft.step : 2);
+  return true;
+}
+
+function clearCheckupDraft(employeeId) {
+  const scope = checkupDraftScope();
+  if (!scope || !employeeId) return;
+  try {
+    localStorage.removeItem(`${scope}:employee:${employeeId}`);
+    draftStorageErrorNotified = false;
+  } catch (error) {
+    reportDraftStorageError("clear", error);
+  }
+}
+
+function clearGuestCheckupDrafts() {
+  const scope = checkupDraftScope();
+  if (!scope) return;
+  try {
+    const prefix = `${scope}:employee:`;
+    const keys = Object.keys(localStorage).filter((key) => key.startsWith(prefix));
+    keys.forEach((key) => localStorage.removeItem(key));
+    localStorage.removeItem(`${scope}:selection`);
+    draftStorageErrorNotified = false;
+  } catch (error) {
+    reportDraftStorageError("clear", error);
+  }
 }
 
 function isValidWhatsApp(value) {
@@ -237,28 +405,72 @@ function renderCheckupIdentitySummary() {
   summary.classList.add("flex");
 }
 
+function hideDailyCheckupStatus() {
+  checkupForm.classList.remove("hidden");
+  checkupProgress.classList.remove("hidden");
+  resultCard.classList.add("hidden");
+  document.querySelector("#daily-checkup-completed-notice").classList.add("hidden");
+}
+
 function showDailyCheckupStatus(checkup) {
   checkupForm.classList.add("hidden");
   checkupProgress.classList.add("hidden");
+  document.querySelector("#daily-checkup-status-loading").classList.add("hidden");
+  document.querySelector("#daily-checkup-completed-notice").classList.remove("hidden");
   showResult(checkup, checkup.readiness_status, checkup.checked_at);
   resultCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+  // Add "Pilih karyawan lain" button for admin
+  if (isAdmin()) {
+    const existingBtn = document.querySelector('.admin-employee-switch-btn');
+    if (existingBtn) existingBtn.remove();
+    
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'primary-button mt-4 w-full admin-employee-switch-btn';
+    btn.innerHTML = '<i data-lucide="user-select" class="mr-2 icon-text-sm"></i>Pilih karyawan lain';
+    btn.addEventListener('click', () => {
+      hideDailyCheckupStatus();
+      setActiveStep(1);
+      departmentSelect.value = '';
+      updateEmployeeOptions();
+      employeeSelect.value = '';
+      checkupForm.classList.remove("hidden");
+      checkupProgress.classList.remove("hidden");
+      resultCard.classList.add("hidden");
+    });
+    const copyBtn = document.querySelector("#copy-report");
+    if (copyBtn) {
+      copyBtn.parentNode.insertBefore(btn, copyBtn.nextSibling);
+    } else {
+      resultCard.querySelector(".panel-card").appendChild(btn);
+    }
+  }
 }
 
 function showCheckupForm(step = 2) {
   checkupForm.classList.remove("hidden");
   checkupProgress.classList.remove("hidden");
+  document.querySelector("#daily-checkup-status-loading").classList.add("hidden");
+  document.querySelector("#daily-checkup-completed-notice").classList.add("hidden");
   resultCard.classList.add("hidden");
   setActiveStep(step);
 }
 
-async function loadGuestDailyStatus() {
-  if (!guestProfile?.deviceToken) return null;
+function showGuestCheckupEntry() {
+  document.querySelector("#daily-checkup-completed-notice").classList.add("hidden");
+  resultCard.classList.add("hidden");
+}
+
+async function loadGuestDailyStatus(employeeId = guestProfile?.employeeId, deviceToken = guestProfile?.deviceToken) {
+  if (!employeeId || !deviceToken) return null;
   const { data, error } = await client.rpc("get_guest_daily_checkup", {
-    p_employee_id: guestProfile.employeeId,
-    p_device_token: guestProfile.deviceToken
+    p_employee_id: employeeId,
+    p_device_token: deviceToken
   });
   if (error) throw error;
-  return Array.isArray(data) ? data[0] ?? null : data;
+  const checkup = Array.isArray(data) ? data[0] ?? null : data;
+  return checkup ? { ...checkup, employee_id: employeeId } : null;
 }
 
 async function loadAuthenticatedDailyCheckup(employeeId) {
@@ -277,17 +489,89 @@ async function loadAuthenticatedDailyCheckup(employeeId) {
 }
 
 function saveCheckupIdentityIfComplete() {
-  if (!guestMode) return;
+  if (!guestMode) return false;
   const whatsapp = document.querySelector("#checkup-whatsapp").value;
   if (departmentSelect.value && employeeSelect.value && isValidWhatsApp(whatsapp)) {
-    persistGuestProfile({
+    const saved = persistGuestProfile({
       departmentId: departmentSelect.value,
       employeeId: employeeSelect.value,
       whatsapp
     });
+    if (!saved) return false;
     syncGuestProfileForm();
+    renderCheckupIdentitySummary();
+    return true;
   }
   renderCheckupIdentitySummary();
+  return false;
+}
+
+async function checkSelectedGuestDailyStatus() {
+  if (!guestMode) return;
+  const requestId = ++guestStatusRequest;
+  const selectedEmployeeId = employeeSelect.value;
+  const selectedDepartmentId = departmentSelect.value;
+  const whatsapp = document.querySelector("#checkup-whatsapp").value;
+  const employee = employees.find((item) =>
+    item.id === selectedEmployeeId
+    && item.department_id === selectedDepartmentId
+    && item.is_active
+  );
+
+  showGuestCheckupEntry();
+  if (!employee || !saveCheckupIdentityIfComplete()) {
+    showCheckupForm(1);
+    return;
+  }
+  checkupForm.classList.add("hidden");
+  checkupProgress.classList.add("hidden");
+  document.querySelector("#daily-checkup-status-loading").classList.remove("hidden");
+  const deviceToken = guestProfile.deviceToken;
+
+  try {
+    const dailyCheckup = await loadGuestDailyStatus(selectedEmployeeId, deviceToken);
+    if (
+      requestId !== guestStatusRequest
+      || selectedEmployeeId !== employeeSelect.value
+      || selectedDepartmentId !== departmentSelect.value
+    ) return;
+    if (dailyCheckup) {
+        showDailyCheckupStatus({
+          ...dailyCheckup,
+          checked_at: dailyCheckup.checked_at,
+          readiness_status: dailyCheckup.readiness_status,
+        });
+        return;
+      } else {
+        showCheckupForm(1);
+      }
+  } catch (error) {
+    if (requestId !== guestStatusRequest) return;
+    console.error("Could not check the selected employee's daily status:", error);
+    showToast(`Gagal memeriksa status checkup hari ini: ${error.message}`, true);
+    const restored = restoreCheckupDraft(selectedEmployeeId);
+    showCheckupForm(restored ? activeStep : 2);
+  }
+}
+
+async function checkAdminSelectedEmployeeDailyStatus() {
+  if (!isAdmin()) return;
+  const selectedEmployeeId = employeeSelect.value;
+  const selectedDepartmentId = departmentSelect.value;
+  const employee = employees.find((item) => item.id === selectedEmployeeId && item.department_id === selectedDepartmentId && item.is_active);
+  
+  if (!employee) {
+    showCheckupForm(1);
+    return;
+  }
+  
+  // Check if employee has daily checkup for today
+  const dailyCheckup = await loadAuthenticatedDailyCheckup(selectedEmployeeId);
+  if (dailyCheckup) {
+    showDailyCheckupStatus(dailyCheckup);
+  } else {
+    showCheckupForm(1);
+  }
 }
 
 function syncGuestProfileForm() {
@@ -747,6 +1031,7 @@ async function submitCheckup(event) {
       if (error) throw error;
       savedCheckup = data;
     }
+    clearCheckupDraft(payload.employee_id);
     showResult(payload, savedCheckup.readiness_status, savedCheckup.checked_at);
     checkupForm.reset();
     departmentSelect.disabled = !guestMode && !isAdmin() && Boolean(currentEmployeeId);
@@ -782,6 +1067,15 @@ async function submitCheckup(event) {
     console.error("Checkup save failed:", error);
     if (error.code === "23505") {
       showToast("Karyawan ini sudah mengisi checkup hari ini.", true);
+      try {
+        const dailyCheckup = guestMode
+          ? await loadGuestDailyStatus()
+          : await loadAuthenticatedDailyCheckup(payload.employee_id);
+        if (dailyCheckup) showDailyCheckupStatus(dailyCheckup);
+      } catch (statusError) {
+        console.error("Could not load the existing daily checkup:", statusError);
+        showToast(`Checkup sudah tercatat, tetapi statusnya gagal dimuat: ${statusError.message}`, true);
+      }
     } else {
       showToast(`Checkup gagal disimpan: ${error.message}`, true);
     }
@@ -911,6 +1205,7 @@ function exportCsv() {
 
 function setTab(tabName, refreshData = true) {
   if (guestMode && !["checkup", "profile"].includes(tabName)) return;
+  if (!isAdmin() && tabName === "profile") return;
   if (tabName === "summary") {
     document.querySelector("#history-readiness").value = "";
   }
@@ -964,8 +1259,11 @@ function openSummaryFilter(filter) {
 }
 
 async function initializeApp(user) {
+  guestStatusRequest += 1;
   guestMode = false;
   guestProfile = null;
+  document.querySelector("#daily-checkup-status-loading").classList.add("hidden");
+  document.querySelector("#daily-checkup-completed-notice").classList.add("hidden");
   checkupForm.classList.remove("hidden");
   checkupProgress.classList.remove("hidden");
   resultCard.replaceChildren();
@@ -978,7 +1276,7 @@ async function initializeApp(user) {
   signoutButton.classList.remove("hidden");
   refreshIcons();
   document.querySelectorAll("[data-tab-target]").forEach((button) => button.classList.remove("hidden"));
-  document.querySelector('[data-tab-target="profile"]').classList.add("hidden");
+  if (!isAdmin()) document.querySelector('[data-tab-target="profile"]').classList.add("hidden");
   appShell.classList.remove("guest-mode");
   document.querySelector("#checkup-whatsapp-wrap").classList.add("hidden");
   document.querySelector("#checkup-whatsapp").required = false;
@@ -994,6 +1292,7 @@ async function initializeApp(user) {
     throw new Error("Akun belum memiliki profil akses. Hubungi administrator.");
   }
   currentProfile = data;
+  resetCheckupResponses();
   todayCheckupCount = null;
   activeEmployeeCount = null;
   currentEmployeeId = null;
@@ -1016,14 +1315,18 @@ async function initializeApp(user) {
 
   await loadDepartments();
   await loadEmployees();
+  if (isAdmin()) restoreCheckupSelection();
   await loadCheckups();
   if (currentProfile.role === "employee") {
     const dailyCheckup = await loadAuthenticatedDailyCheckup(currentEmployeeId);
     if (dailyCheckup) {
       showDailyCheckupStatus(dailyCheckup);
     } else {
-      showCheckupForm(1);
+      const restored = restoreCheckupDraft(currentEmployeeId);
+      showCheckupForm(restored ? activeStep : 1);
     }
+  } else if (isAdmin()) {
+    restoreCheckupDraft(employeeSelect.value);
   } else {
     checkupForm.classList.remove("hidden");
     checkupProgress.classList.remove("hidden");
@@ -1064,6 +1367,7 @@ async function initializeApp(user) {
 }
 
 async function initializeGuestApp() {
+  guestStatusRequest += 1;
   const { data: enabled, error: settingsError } = await client.rpc("is_guest_checkups_enabled");
   if (settingsError) throw settingsError;
   if (!enabled) {
@@ -1078,9 +1382,12 @@ async function initializeGuestApp() {
   }
 
   guestMode = true;
+  document.querySelector("#daily-checkup-status-loading").classList.add("hidden");
+  document.querySelector("#daily-checkup-completed-notice").classList.add("hidden");
   currentUser = null;
   currentProfile = null;
   currentEmployeeId = null;
+  resetCheckupResponses();
   todayCheckupCount = null;
   activeEmployeeCount = null;
   checkups = [];
@@ -1144,12 +1451,14 @@ async function initializeGuestApp() {
       if (dailyCheckup) {
         showDailyCheckupStatus(dailyCheckup);
       } else {
-        showCheckupForm(2);
+        const restored = restoreCheckupDraft(guestProfile.employeeId);
+        showCheckupForm(restored ? activeStep : 2);
       }
     } catch (error) {
       console.error("Could not load this device's daily checkup:", error);
       showToast(`Gagal memeriksa status checkup hari ini: ${error.message}`, true);
-      showCheckupForm(2);
+      const restored = restoreCheckupDraft(guestProfile.employeeId);
+      showCheckupForm(restored ? activeStep : 2);
     }
   } else {
     guestProfile = null;
@@ -1230,27 +1539,54 @@ function bindEvents() {
   });
   document.querySelectorAll("[data-next]").forEach((button) => {
     button.addEventListener("click", () => {
-      if (validateStep(activeStep)) setActiveStep(Math.min(3, activeStep + 1));
+      if (validateStep(activeStep)) {
+        setActiveStep(Math.min(3, activeStep + 1));
+        saveCheckupDraft();
+      }
     });
   });
   document.querySelectorAll("[data-prev]").forEach((button) => {
-    button.addEventListener("click", () => setActiveStep(Math.max(1, activeStep - 1)));
+    button.addEventListener("click", () => {
+      setActiveStep(Math.max(1, activeStep - 1));
+      saveCheckupDraft();
+    });
   });
   departmentSelect.addEventListener("change", updateEmployeeOptions);
   departmentSelect.addEventListener("change", () => {
     if (guestMode) saveCheckupIdentityIfComplete();
   });
+  departmentSelect.addEventListener("change", () => {
+    resetCheckupResponses();
+    persistCheckupSelection();
+  });
+  departmentSelect.addEventListener("change", checkSelectedGuestDailyStatus);
+  departmentSelect.addEventListener("change", checkAdminSelectedEmployeeDailyStatus);
   employeeSelect.addEventListener("change", () => {
     if (guestMode) saveCheckupIdentityIfComplete();
   });
+  employeeSelect.addEventListener("change", () => {
+    resetCheckupResponses();
+    persistCheckupSelection();
+    restoreCheckupDraft(employeeSelect.value);
+  });
+  employeeSelect.addEventListener("change", checkAdminSelectedEmployeeDailyStatus);
+  employeeSelect.addEventListener("change", checkSelectedGuestDailyStatus);
   document.querySelector("#edit-checkup-identity").addEventListener("click", () => {
-    if (!guestMode) return;
-    syncGuestProfileForm();
-    setTab("profile");
+    if (guestMode) {
+      syncGuestProfileForm();
+    } else if (isAdmin()) {
+      setTab("profile");
+    }
   });
   document.querySelector("#checkup-whatsapp").addEventListener("input", () => {
     saveCheckupIdentityIfComplete();
+    if (guestMode && !isValidWhatsApp(document.querySelector("#checkup-whatsapp").value)) {
+      guestStatusRequest += 1;
+      showGuestCheckupEntry();
+      showCheckupForm(1);
+    }
   });
+  document.querySelector("#checkup-whatsapp").addEventListener("change", checkSelectedGuestDailyStatus);
   document.querySelector("#profile-department").addEventListener("change", () => {
     updateProfileEmployeeOptions();
   });
@@ -1282,17 +1618,21 @@ function bindEvents() {
       if (dailyCheckup) {
         showDailyCheckupStatus(dailyCheckup);
       } else {
-        showCheckupForm(2);
+        const restored = restoreCheckupDraft(employeeId);
+        showCheckupForm(restored ? activeStep : 2);
       }
     } catch (error) {
       console.error("Could not load this device's daily checkup:", error);
       showToast(`Profil tersimpan, tetapi status checkup gagal dimuat: ${error.message}`, true);
-      showCheckupForm(2);
+      const restored = restoreCheckupDraft(employeeId);
+      showCheckupForm(restored ? activeStep : 2);
     }
     setTab("checkup");
   });
   document.querySelector("#clear-guest-profile").addEventListener("click", () => {
     try {
+      guestStatusRequest += 1;
+      clearGuestCheckupDrafts();
       localStorage.removeItem(guestProfileStorageKey);
       guestProfile = null;
       checkupForm.classList.remove("hidden");
@@ -1314,17 +1654,11 @@ function bindEvents() {
     }
   });
   document.querySelector("#temperature").addEventListener("input", updateTemperatureDisplay);
-  checkupForm.querySelectorAll('input[name="symptoms"]').forEach((input) => {
-    input.addEventListener("change", () => {
-      const fitToggle = checkupForm.querySelector('input[name="symptoms"][value="fit"]');
-      if (input.value === "fit" && input.checked) {
-        checkupForm.querySelectorAll('input[name="symptoms"]:not([value="fit"])').forEach((symptom) => {
-          symptom.checked = false;
-        });
-      } else if (input.checked && input.value !== "fit") {
-        fitToggle.checked = false;
-      }
-    });
+  checkupForm.addEventListener("input", (event) => {
+    if (isCheckupDraftField(event.target)) saveCheckupDraft();
+  });
+  checkupForm.addEventListener("change", (event) => {
+    if (isCheckupDraftField(event.target)) saveCheckupDraft();
   });
   checkupForm.addEventListener("submit", submitCheckup);
   document.querySelector("#open-employee-modal").addEventListener("click", () => {
