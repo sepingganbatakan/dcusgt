@@ -28,6 +28,8 @@ let guestProfile = null;
 let departments = [];
 let employees = [];
 let checkups = [];
+let todayCheckupCount = null;
+let activeEmployeeCount = null;
 let activeStep = 1;
 let toastTimeout;
 let realtimeChannel;
@@ -540,8 +542,28 @@ async function loadCheckups() {
     throw error;
   }
   checkups = data ?? [];
+  if (isAdmin()) await loadDailyCoverage();
   renderHistory();
   renderSummary();
+}
+
+async function loadDailyCoverage() {
+  const { start, end } = jakartaDateRange();
+  const [checkupResult, employeeResult] = await Promise.all([
+    client
+      .from("checkups")
+      .select("id", { count: "exact", head: true })
+      .gte("checked_at", start)
+      .lt("checked_at", end),
+    client
+      .from("employees")
+      .select("id", { count: "exact", head: true })
+      .eq("is_active", true)
+  ]);
+  if (checkupResult.error) throw checkupResult.error;
+  if (employeeResult.error) throw employeeResult.error;
+  todayCheckupCount = checkupResult.count ?? 0;
+  activeEmployeeCount = employeeResult.count ?? 0;
 }
 
 function renderHistory() {
@@ -579,12 +601,20 @@ function renderHistory() {
 
 function renderSummary() {
   const counts = {
-    total: checkups.length,
     fit: checkups.filter((item) => item.readiness_status === "fit_to_work").length,
     observe: checkups.filter((item) => item.readiness_status === "need_observation").length,
     rest: checkups.filter((item) => item.readiness_status === "rest_recommended").length
   };
-  document.querySelector("#stat-total").textContent = String(counts.total);
+  if (isAdmin() && todayCheckupCount !== null && activeEmployeeCount !== null) {
+    const coverage = activeEmployeeCount
+      ? Math.min(100, Math.round((todayCheckupCount / activeEmployeeCount) * 100))
+      : 0;
+    document.querySelector("#stat-today-checkups").textContent = String(todayCheckupCount);
+    document.querySelector("#stat-active-employees").textContent = String(activeEmployeeCount);
+    document.querySelector("#stat-coverage-percent").textContent = `${coverage}%`;
+    document.querySelector("#stat-coverage-bar").style.width = `${coverage}%`;
+    document.querySelector("#stat-coverage-bar").parentElement.setAttribute("aria-valuenow", String(coverage));
+  }
   document.querySelector("#stat-fit").textContent = String(counts.fit);
   document.querySelector("#stat-observe").textContent = String(counts.observe);
   document.querySelector("#stat-rest").textContent = String(counts.rest);
@@ -919,6 +949,8 @@ async function initializeApp(user) {
     throw new Error("Akun belum memiliki profil akses. Hubungi administrator.");
   }
   currentProfile = data;
+  todayCheckupCount = null;
+  activeEmployeeCount = null;
   currentEmployeeId = null;
   if (currentProfile.role === "employee") {
     const employeeResult = await client.rpc("current_employee_id");
@@ -935,6 +967,7 @@ async function initializeApp(user) {
     weekday: "long", day: "numeric", month: "long", year: "numeric"
   }).format(new Date());
   document.querySelector("#history-department-wrap").classList.toggle("hidden", !isAdmin());
+  document.querySelector("#daily-coverage-card").classList.toggle("hidden", !isAdmin());
 
   await loadDepartments();
   await loadEmployees();
@@ -968,9 +1001,14 @@ async function initializeApp(user) {
       });
     })
     .on("postgres_changes", { event: "*", schema: "public", table: "employees" }, () => {
-      loadEmployees().catch((error) => {
+      loadEmployees().then(async () => {
+        if (isAdmin()) {
+          await loadDailyCoverage();
+          renderSummary();
+        }
+      }).catch((error) => {
         console.error("Realtime employee refresh failed:", error);
-        showToast(`Gagal memperbarui daftar karyawan: ${error.message}`, true);
+        showToast(`Gagal memperbarui data karyawan: ${error.message}`, true);
       });
     })
     .subscribe((status) => {
@@ -998,9 +1036,15 @@ async function initializeGuestApp() {
   currentUser = null;
   currentProfile = null;
   currentEmployeeId = null;
+  todayCheckupCount = null;
+  activeEmployeeCount = null;
   checkups = [];
   historyList.replaceChildren();
-  document.querySelector("#stat-total").textContent = "—";
+  document.querySelector("#stat-today-checkups").textContent = "—";
+  document.querySelector("#stat-active-employees").textContent = "—";
+  document.querySelector("#stat-coverage-percent").textContent = "—";
+  document.querySelector("#stat-coverage-bar").style.width = "0%";
+  document.querySelector("#stat-coverage-bar").parentElement.setAttribute("aria-valuenow", "0");
   document.querySelector("#stat-fit").textContent = "—";
   document.querySelector("#stat-observe").textContent = "—";
   document.querySelector("#stat-rest").textContent = "—";
@@ -1025,6 +1069,7 @@ async function initializeGuestApp() {
     if (button.dataset.tabTarget !== "checkup") button.classList.add("hidden");
   });
   document.querySelector('[data-tab-target="profile"]').classList.remove("hidden");
+  document.querySelector("#daily-coverage-card").classList.add("hidden");
   appShell.classList.add("guest-mode");
   document.querySelector("#profile-add-employee").disabled =
     !ALLOW_GUEST_EMPLOYEE_CREATION || !guestEmployeeCreationEnabled;

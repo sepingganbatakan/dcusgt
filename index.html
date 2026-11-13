@@ -202,7 +202,23 @@
           <p class="mt-1 text-sm text-slate-500">Ikhtisar berdasarkan riwayat yang dapat Anda akses.</p>
         </div>
         <div class="mb-4 grid grid-cols-2 gap-3">
-          <article class="stat-card"><span class="stat-icon blue"><i data-lucide="clipboard-check"></i></span><p class="stat-label">Total checkup</p><p id="stat-total" class="stat-value">—</p></article>
+          <article id="daily-coverage-card" class="stat-card daily-coverage-card col-span-2">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="stat-label mt-0">Checkup hari ini / karyawan aktif</p>
+                <p class="coverage-value"><span id="stat-today-checkups">—</span><span class="coverage-divider">/</span><span id="stat-active-employees" class="coverage-total">—</span></p>
+              </div>
+              <span class="stat-icon blue"><i data-lucide="clipboard-check"></i></span>
+            </div>
+            <div class="mt-3">
+              <div class="mb-1.5 flex items-center justify-between text-[10px] font-semibold text-slate-500">
+                <span>Partisipasi checkup hari ini</span><span id="stat-coverage-percent">—</span>
+              </div>
+              <div class="h-1.5 overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-label="Persentase karyawan yang sudah checkup" aria-valuemin="0" aria-valuemax="100">
+                <div id="stat-coverage-bar" class="h-full rounded-full bg-blue-600 transition-all duration-300" style="width:0%"></div>
+              </div>
+            </div>
+          </article>
           <article class="stat-card"><span class="stat-icon green"><i data-lucide="shield-check"></i></span><p class="stat-label">Fit to Work</p><p id="stat-fit" class="stat-value">—</p></article>
           <article class="stat-card"><span class="stat-icon amber"><i data-lucide="eye"></i></span><p class="stat-label">Perlu observasi</p><p id="stat-observe" class="stat-value">—</p></article>
           <article class="stat-card"><span class="stat-icon rose"><i data-lucide="heart-pulse"></i></span><p class="stat-label">Istirahat disarankan</p><p id="stat-rest" class="stat-value">—</p></article>

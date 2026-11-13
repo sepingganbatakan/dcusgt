@@ -398,6 +398,39 @@ button {
   padding: 14px;
 }
 
+.daily-coverage-card {
+  min-height: 142px;
+  padding: 17px;
+}
+
+.coverage-value {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin-top: 5px;
+  color: #1d4ed8;
+  font-family: Manrope, sans-serif;
+  font-size: 34px;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.04em;
+}
+
+.coverage-divider,
+.coverage-total {
+  color: #64748b;
+}
+
+.coverage-divider {
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.coverage-total {
+  font-size: 23px;
+  font-weight: 700;
+}
+
 .stat-icon {
   display: grid;
   width: 32px;
