@@ -1062,6 +1062,54 @@ async function submitCheckup(event) {
     updateTemperatureDisplay();
     if (!guestMode && currentProfile?.role !== "employee") setActiveStep(1);
     showToast("Checkup berhasil disimpan.");
+
+    // === BAGIAN BARU: Kirim notifikasi WhatsApp setelah checkup disimpan ===
+    // 1. Baca WA karyawan dari localStorage
+    let employeeWa = null;
+    if (guestMode) {
+      employeeWa = guestProfile?.whatsapp ?? null;
+    } else if (currentUser) {
+      // Untuk karyawan login: ambil dari localStorage dengan kunci terenkripsi/userId
+      const storageKey = `dcu-employee-whatsapp-${currentUser.id}`;
+      employeeWa = localStorage.getItem(storageKey) ?? null;
+    }
+
+    // 2. Tentukan apakah notifikasi dikirim ke HR/atasan (hanya jika status bukan Fit to Work)
+    const status = savedCheckup.readiness_status;
+    const notifyHR = status !== "fit_to_work";
+const selectedEmployee = employees.find((employee) => employee.id === payload.employee_id);
+    const departmentName = departments.find((department) => department.id === selectedEmployee?.department_id)?.name ?? "—";
+
+    // 3. Panggil Edge Function jika ada WA karyawan
+    if (employeeWa) {
+      try {
+        const fetchUrl = `${SUPABASE_URL}/functions/v1/send-wa-notification`;
+        const fetchOptions = {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            // Gunakan anon key; Edge Function akan menggunakan service role internal
+          },
+          body: JSON.stringify({
+            checkup_id: savedCheckup.id,
+            employee_wa: employeeWa,
+            employee_name: selectedEmployee?.full_name ?? "Karyawan",
+            department_name: departmentName,
+            status: status,
+            checked_at: savedCheckup.checked_at,
+            notify_hr_head: notifyHR,
+          }),
+        };
+
+        await fetch(fetchUrl, fetchOptions);
+        // Catatan: error dari Edge Function diabaikan agar tidak mengganggu alur checkup
+        // Jika ingin menampilkan error, bisa ditambahkan blok catch di sini
+      } catch (waError) {
+        console.error("WhatsApp notification gagal:", waError);
+        // Tidak menampilkan toast error agar tidak mengganggu pengguna
+      }
+    }
+
     if (!guestMode) await loadCheckups();
   } catch (error) {
     console.error("Checkup save failed:", error);
@@ -1714,6 +1762,34 @@ function bindEvents() {
   });
   document.querySelector("#export-csv").addEventListener("click", exportCsv);
 }
+// === BARU: Inisialisasi Nomor WhatsApp Karyawan ===
+function initEmployeeWhApp() {
+  const waSection = document.getElementById("employee-wa-section");
+  const waInput = document.getElementById("employee-whatsapp-input");
+
+  // Tampilkan section hanya jika karyawan login (bukan guest)
+  if (guestMode) {
+    waSection.classList.add("hidden");
+  } else if (currentUser) {
+    waSection.classList.remove("hidden");
+    // Muat WA yang tersimpan dari localStorage
+    const storageKey = `dcu-employee-whatsapp-${currentUser.id}`;
+    const savedWa = localStorage.getItem(storageKey);
+    if (savedWa) {
+      waInput.value = savedWa;
+    }
+    // Simpan saat input kehilangan fokus
+    waInput.addEventListener("blur", () => {
+      localStorage.setItem(storageKey, waInput.value);
+      showToast("Nomor WhatsApp disimpan di perangkat ini.", false);
+    });
+  } else {
+    waSection.classList.add("hidden");
+  }
+}
+
+// Panggil di boot setelah bindEvents
+initEmployeeWhApp();
 
 async function boot() {
   bindEvents();
