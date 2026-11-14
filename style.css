@@ -648,6 +648,11 @@ button {
   box-shadow: 0 20px 60px rgb(15 23 42 / 20%);
 }
 
+#employee-modal .modal-card {
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+}
+
 .empty-state {
   border: 1px dashed #cbd5e1;
   border-radius: 17px;
@@ -685,3 +690,76 @@ button {
     animation-duration: 0.01ms !important;
   }
 }
+
+/* Offline Queue & Sync Styles */
+.sync-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 9999px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  padding: 4px 9px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #475569;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.sync-badge:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.sync-badge.is-offline {
+  border-color: #fcd34d;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.sync-badge.is-syncing {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1e40af;
+}
+
+.queue-count-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 9999px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.sync-badge.is-offline .queue-count-pill {
+  background: #d97706;
+}
+
+.offline-notice-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.offline-queue-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  font-size: 12px;
+}
+

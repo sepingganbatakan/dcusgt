@@ -60,7 +60,15 @@
               <p id="today-label" class="text-xs text-slate-500"></p>
             </div>
           </div>
-          <button id="signout-button" class="icon-button" type="button" aria-label="Keluar" title="Keluar"><i data-lucide="log-out"></i></button>
+          <div class="flex items-center gap-2">
+            <button id="offline-queue-badge" class="sync-badge hidden" type="button" aria-label="Status antrean offline" title="Status koneksi dan antrean">
+              <span id="sync-icon"><i data-lucide="wifi" class="h-3.5 w-3.5 text-emerald-600"></i></span>
+              <span id="sync-text">Online</span>
+              <span id="queue-count" class="queue-count-pill hidden">0</span>
+            </button>
+            <button id="manual-sync-button" class="icon-button hidden" type="button" aria-label="Sinkronkan antrean" title="Sinkronkan data offline"><i data-lucide="refresh-cw"></i></button>
+            <button id="signout-button" class="icon-button" type="button" aria-label="Keluar" title="Keluar"><i data-lucide="log-out"></i></button>
+          </div>
         </div>
       </header>
 
@@ -77,7 +85,11 @@
         </div>
         <div id="daily-checkup-completed-notice" class="daily-checkup-notice mb-4 hidden" role="status" aria-live="polite">
           <i data-lucide="circle-check"></i>
-          <p><b>Anda sudah melakukan DCU hari ini.</b><span>Form pengisian berikutnya tersedia kembali besok.</span></p>
+          <p>
+            <b>DCU hari ini tersimpan.</b>
+            <span>Periksa kuota dan jadwal DCU untuk pengisian berikutnya.</span>
+            <button id="daily-checkup-next" class="mt-3 hidden text-xs font-bold text-green-800 underline underline-offset-2" type="button">Isi DCU berikutnya</button>
+          </p>
         </div>
         <div id="daily-checkup-status-loading" class="daily-checkup-status-loading mb-4 hidden" role="status" aria-live="polite">Memeriksa status DCU hari ini…</div>
         <div id="checkup-progress" class="mb-5 rounded-2xl border border-slate-200 bg-white p-4">
@@ -283,8 +295,28 @@
         </div>
         <label class="field-label" for="new-employee-name">Nama lengkap</label>
         <input id="new-employee-name" class="field-input mt-2" type="text" maxlength="120" required>
+        <label class="field-label mt-4" for="new-employee-status">Status karyawan <span class="font-normal text-slate-500">(opsional)</span></label>
+        <select id="new-employee-status" class="field-input mt-2">
+          <option value="">Pilih status</option>
+          <option value="Perwira">Perwira</option>
+          <option value="TKJP">TKJP</option>
+          <option value="Mitra">Mitra</option>
+          <option value="Magang">Magang</option>
+        </select>
+        <label class="field-label mt-4" for="new-employee-job-title">Job title <span class="font-normal text-slate-500">(opsional)</span></label>
+        <input id="new-employee-job-title" class="field-input mt-2" type="text" maxlength="120">
+        <label class="field-label mt-4" for="new-employee-work-pattern">Pola kerja <span class="font-normal text-slate-500">(opsional)</span></label>
+        <select id="new-employee-work-pattern" class="field-input mt-2">
+          <option value="">Pilih pola kerja</option>
+          <option value="Shift">Shift</option>
+          <option value="Non-Shift">Non-Shift</option>
+        </select>
+        <label id="new-employee-active-wrap" class="mt-4 flex items-center gap-3 text-sm font-semibold text-slate-700" for="new-employee-active">
+          <input id="new-employee-active" class="toggle-input" type="checkbox" checked>
+          Karyawan aktif
+        </label>
         <p id="new-employee-department" class="mt-3 text-xs text-slate-500"></p>
-        <p id="guest-employee-note" class="mt-2 hidden text-xs leading-5 text-amber-800">Nama ini akan masuk ke daftar departemen dan tidak memerlukan akun login.</p>
+        <p id="guest-employee-note" class="mt-2 hidden text-xs leading-5 text-amber-800">Nama dan informasi ini akan masuk ke daftar departemen dan tidak memerlukan akun login.</p>
         <button id="save-employee" class="primary-button mt-5 w-full" type="submit">Simpan karyawan <i data-lucide="check"></i></button>
       </form>
     </dialog>
@@ -317,6 +349,35 @@
           </button>
           <button id="cancel-export-modal" class="w-full py-1 text-center text-xs font-semibold text-slate-400 hover:text-slate-600" type="button">
             Batal
+          </button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog id="queue-modal" class="modal">
+      <div class="modal-card">
+        <div class="mb-4 flex items-start justify-between">
+          <div>
+            <p class="eyebrow">ANTREAN OFFLINE</p>
+            <h2 class="mt-1 font-display text-xl font-extrabold text-slate-900">Data belum tersinkron</h2>
+          </div>
+          <button id="close-queue-modal" class="icon-button" type="button" aria-label="Tutup"><i data-lucide="x"></i></button>
+        </div>
+
+        <p class="text-xs leading-5 text-slate-500 mb-4">
+          Pemeriksaan atau pendaftaran nama yang dilakukan saat offline tersimpan aman di browser ini dan otomatis dikirim ketika koneksi internet kembali.
+        </p>
+
+        <div id="queue-list" class="space-y-2.5 max-h-60 overflow-y-auto mb-4">
+          <p class="text-xs text-center text-slate-400 py-3">Tidak ada antrean.</p>
+        </div>
+
+        <div class="space-y-2">
+          <button id="trigger-sync-btn" class="primary-button w-full justify-center" type="button">
+            <i data-lucide="refresh-cw"></i> Sinkronkan sekarang
+          </button>
+          <button id="close-queue-btn" class="w-full py-1 text-center text-xs font-semibold text-slate-400 hover:text-slate-600" type="button">
+            Tutup
           </button>
         </div>
       </div>

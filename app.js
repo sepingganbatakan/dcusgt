@@ -5,6 +5,16 @@ import {
   SUPABASE_ANON_KEY,
   SUPABASE_URL
 } from "./config.js";
+import {
+  saveDirectoryCache,
+  getDirectoryCache,
+  enqueueOfflineItem,
+  getPendingOfflineQueue,
+  getAllOfflineQueueItems,
+  getPendingOfflineCount,
+  removeOfflineItem,
+  evaluateReadiness
+} from "./offline-storage.js";
 
 const supabaseFactory = window.supabase?.createClient;
 const loginScreen = document.querySelector("#login-screen");
@@ -18,6 +28,16 @@ const resultCard = document.querySelector("#result-card");
 const employeeModal = document.querySelector("#employee-modal");
 const exportConfirmModal = document.querySelector("#export-confirm-modal");
 const historyList = document.querySelector("#history-list");
+const offlineQueueBadge = document.querySelector("#offline-queue-badge");
+const syncIcon = document.querySelector("#sync-icon");
+const syncText = document.querySelector("#sync-text");
+const queueCountBadge = document.querySelector("#queue-count");
+const manualSyncButton = document.querySelector("#manual-sync-button");
+const queueModal = document.querySelector("#queue-modal");
+const closeQueueModalBtn = document.querySelector("#close-queue-modal");
+const closeQueueBtn = document.querySelector("#close-queue-btn");
+const triggerSyncBtn = document.querySelector("#trigger-sync-btn");
+const queueList = document.querySelector("#queue-list");
 const guestProfileStorageKey = "daily-checkup-guest-profile-v1";
 const checkupDraftStoragePrefix = "daily-checkup-draft-v1";
 
@@ -38,6 +58,7 @@ let activeStep = 1;
 let toastTimeout;
 let realtimeChannel;
 let draftStorageErrorNotified = false;
+let isSyncing = false;
 let guestStatusRequest = 0;
 let activeTimezone = (typeof APP_TIMEZONE === "string" && APP_TIMEZONE.trim())
   ? APP_TIMEZONE.trim()
@@ -473,8 +494,28 @@ function showDailyCheckupStatus(checkup) {
   checkupForm.classList.add("hidden");
   checkupProgress.classList.add("hidden");
   document.querySelector("#daily-checkup-status-loading").classList.add("hidden");
-  document.querySelector("#daily-checkup-completed-notice").classList.remove("hidden");
-  showResult(checkup, checkup.readiness_status, checkup.checked_at);
+  const completedNotice = document.querySelector("#daily-checkup-completed-notice");
+  completedNotice.classList.remove("hidden");
+  const canSubmitMore = Boolean(checkup?.can_submit_more) && !checkup?.is_offline;
+  const nextButton = document.querySelector("#daily-checkup-next");
+  nextButton.classList.toggle("hidden", !canSubmitMore);
+  nextButton.onclick = () => showCheckupForm(2);
+  if (checkup?.is_offline) {
+    const boldEl = completedNotice.querySelector("b");
+    const spanEl = completedNotice.querySelector("span");
+    if (boldEl) boldEl.textContent = "DCU hari ini tersimpan di antrean offline.";
+    if (spanEl) spanEl.textContent = "Data akan otomatis disinkronkan ke server saat perangkat terhubung internet.";
+  } else {
+    const boldEl = completedNotice.querySelector("b");
+    const spanEl = completedNotice.querySelector("span");
+    if (boldEl) boldEl.textContent = canSubmitMore
+      ? "DCU hari ini berhasil tersimpan."
+      : "Tidak ada kuota DCU hari ini atau pola kerja belum diisi.";
+    if (spanEl) spanEl.textContent = canSubmitMore
+      ? "Anda masih dapat mengisi lagi sesuai jadwal dan batas harian."
+      : "Lengkapi pola kerja dengan HR, atau isi kembali pada hari berikutnya jika kuota sudah tercapai.";
+  }
+  showResult(checkup, checkup.readiness_status, checkup.checked_at, Boolean(checkup?.is_offline));
   resultCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
 
   // Add "Pilih karyawan lain" button for admin
@@ -521,13 +562,44 @@ function showGuestCheckupEntry() {
 
 async function loadGuestDailyStatus(employeeId = guestProfile?.employeeId, deviceToken = guestProfile?.deviceToken) {
   if (!employeeId || !deviceToken) return null;
-  const { data, error } = await client.rpc("get_guest_daily_checkup", {
-    p_employee_id: employeeId,
-    p_device_token: deviceToken
-  });
-  if (error) throw error;
-  const checkup = Array.isArray(data) ? data[0] ?? null : data;
-  return checkup ? { ...checkup, employee_id: employeeId } : null;
+  try {
+    if (!navigator.onLine) throw new Error("Offline");
+    const { data, error } = await client.rpc("get_guest_daily_checkup", {
+      p_employee_id: employeeId,
+      p_device_token: deviceToken
+    });
+    if (error) throw error;
+    const checkup = Array.isArray(data) ? data[0] ?? null : data;
+    if (!checkup) return null;
+    const { data: canSubmitMore, error: statusError } = await client.rpc("can_submit_additional_dcu", {
+      p_employee_id: employeeId,
+      p_device_token: deviceToken
+    });
+    if (statusError) throw statusError;
+    return {
+      ...checkup,
+      employee_id: employeeId,
+      can_submit_more: Boolean(canSubmitMore)
+    };
+  } catch (error) {
+    try {
+      const queue = await getPendingOfflineQueue();
+      const queued = queue.find((q) => q.action === "submit_checkup" && q.employee_id === employeeId);
+      if (queued) {
+        return {
+          ...queued.payload,
+          employee_id: employeeId,
+          checked_at: queued.measured_at,
+          readiness_status: queued.preliminary_status,
+          is_offline: true
+        };
+      }
+    } catch (_) {}
+    if (!navigator.onLine || error.message?.includes("Failed to fetch") || error.name === "TypeError" || error.message === "Offline") {
+      return null;
+    }
+    throw error;
+  }
 }
 
 async function loadAuthenticatedDailyCheckup(employeeId) {
@@ -542,7 +614,13 @@ async function loadAuthenticatedDailyCheckup(employeeId) {
     .limit(1)
     .maybeSingle();
   if (error) throw error;
-  return data;
+  if (!data) return null;
+  const { data: canSubmitMore, error: statusError } = await client.rpc("can_submit_additional_dcu", {
+    p_employee_id: employeeId,
+    p_device_token: null
+  });
+  if (statusError) throw statusError;
+  return { ...data, can_submit_more: Boolean(canSubmitMore) };
 }
 
 function saveCheckupIdentityIfComplete() {
@@ -639,9 +717,11 @@ function syncGuestProfileForm() {
 }
 
 function openEmployeeModal(departmentId, canAddAsGuest) {
+  document.querySelector("#employee-form").reset();
   document.querySelector("#employee-modal-eyebrow").textContent = canAddAsGuest ? "TAMBAH NAMA" : "MASTER DATA";
   document.querySelector("#employee-modal-title").textContent = canAddAsGuest ? "Tambahkan nama Anda" : "Tambah karyawan";
   document.querySelector("#guest-employee-note").classList.toggle("hidden", !canAddAsGuest);
+  document.querySelector("#new-employee-active-wrap").classList.toggle("hidden", canAddAsGuest);
   const departmentName = departments.find((department) => department.id === departmentId)?.name ?? "";
   document.querySelector("#new-employee-department").textContent = `Departemen: ${departmentName}`;
   employeeModal.showModal();
@@ -804,21 +884,293 @@ async function loadDepartments() {
   }
 }
 
-async function loadGuestDirectory() {
-  const { data, error } = await client.rpc("get_guest_directory");
-  if (error) throw error;
+async function updateNetworkAndQueueUI() {
+  if (!offlineQueueBadge) return;
+  const isOnline = navigator.onLine;
+  let pendingCount = 0;
+  try {
+    pendingCount = await getPendingOfflineCount();
+  } catch (_) {}
 
-  const directory = data ?? [];
-  departments = [...new Map(directory.map((row) => [
-    row.department_id,
-    { id: row.department_id, name: row.department_name }
-  ])).values()].sort((a, b) => a.name.localeCompare(b.name, "id"));
-  employees = directory.filter((row) => row.employee_id).map((row) => ({
-    id: row.employee_id,
-    department_id: row.department_id,
-    full_name: row.employee_name,
-    is_active: true
-  })).sort((a, b) => a.full_name.localeCompare(b.full_name, "id"));
+  offlineQueueBadge.classList.remove("hidden");
+  if (!isOnline) {
+    offlineQueueBadge.className = "sync-badge is-offline";
+    syncIcon.innerHTML = '<i data-lucide="wifi-off" class="h-3.5 w-3.5 text-amber-700"></i>';
+    syncText.textContent = "Offline";
+  } else if (isSyncing) {
+    offlineQueueBadge.className = "sync-badge is-syncing";
+    syncIcon.innerHTML = '<i data-lucide="refresh-cw" class="h-3.5 w-3.5 text-blue-600 animate-spin"></i>';
+    syncText.textContent = "Menyinkronkan…";
+  } else {
+    offlineQueueBadge.className = "sync-badge";
+    syncIcon.innerHTML = '<i data-lucide="wifi" class="h-3.5 w-3.5 text-emerald-600"></i>';
+    syncText.textContent = "Online";
+  }
+
+  if (pendingCount > 0) {
+    queueCountBadge.textContent = String(pendingCount);
+    queueCountBadge.classList.remove("hidden");
+    manualSyncButton?.classList.remove("hidden");
+  } else {
+    queueCountBadge.classList.add("hidden");
+    manualSyncButton?.classList.add("hidden");
+  }
+  refreshIcons();
+}
+
+async function renderQueueModal() {
+  if (!queueList) return;
+  try {
+    const items = await getAllOfflineQueueItems();
+    if (!items.length) {
+      queueList.innerHTML = '<p class="text-xs text-center text-slate-400 py-3">Tidak ada antrean tertunda.</p>';
+      return;
+    }
+
+    queueList.innerHTML = items.map((item) => {
+      const isEmployee = item.action === "add_guest_employee";
+      const title = isEmployee
+        ? `Daftar Nama: ${escapeHtml(item.payload?.p_full_name || "Karyawan Baru")}`
+        : `Checkup: ${escapeHtml(employees.find((e) => e.id === item.employee_id)?.full_name || "Karyawan")}`;
+      const statusPill = item.preliminary_status
+        ? `<span class="offline-notice-badge ml-1.5">${statusDetails[item.preliminary_status]?.label || item.preliminary_status}</span>`
+        : "";
+      const timeStr = formatDate(item.measured_at || item.created_at);
+
+      return `
+        <div class="offline-queue-item flex items-center justify-between gap-2">
+          <div class="min-w-0 flex-1">
+            <p class="font-bold text-slate-800 text-xs truncate">${title} ${statusPill}</p>
+            <p class="text-[11px] text-slate-500 mt-0.5">${timeStr} · <span class="text-amber-700 font-semibold">Menunggu sync</span></p>
+          </div>
+          <span class="text-slate-400 text-xs shrink-0"><i data-lucide="${isEmployee ? 'user-plus' : 'clipboard-list'}" class="h-4 w-4"></i></span>
+        </div>
+      `;
+    }).join("");
+    refreshIcons();
+  } catch (err) {
+    queueList.innerHTML = `<p class="text-xs text-rose-500 py-2">Gagal membaca antrean: ${escapeHtml(err.message)}</p>`;
+  }
+}
+
+function openQueueModal() {
+  renderQueueModal();
+  queueModal?.showModal();
+}
+
+async function syncOfflineQueue(showToastNotice = false) {
+  if (isSyncing) return;
+  if (!navigator.onLine) {
+    if (showToastNotice) showToast("Perangkat sedang offline. Menunggu koneksi internet...", true);
+    return;
+  }
+
+  let pendingItems = [];
+  try {
+    pendingItems = await getPendingOfflineQueue();
+  } catch (_) {
+    return;
+  }
+
+  if (pendingItems.length === 0) {
+    if (showToastNotice) showToast("Semua data sudah tersinkron.");
+    await updateNetworkAndQueueUI();
+    return;
+  }
+
+  isSyncing = true;
+  await updateNetworkAndQueueUI();
+  if (showToastNotice) showToast("Memulai sinkronisasi antrean offline…");
+
+  let syncedCount = 0;
+  let errorCount = 0;
+  const rejectedCheckups = [];
+
+  const employeeItems = pendingItems.filter((i) => i.action === "add_guest_employee");
+  const checkupItems = pendingItems.filter((i) => i.action === "submit_checkup");
+  const resolvedIdMap = new Map();
+
+  // 1. Sinkronkan Karyawan Tamu Baru
+  for (const item of employeeItems) {
+    try {
+      const { data, error } = await client.rpc("add_guest_employee", item.payload);
+      if (error) throw error;
+      const saved = Array.isArray(data) ? data[0] : data;
+      const realEmployeeId = saved?.employee_id || saved?.id;
+      if (realEmployeeId && item.temp_employee_id) {
+        resolvedIdMap.set(item.temp_employee_id, realEmployeeId);
+
+        if (guestProfile && guestProfile.employeeId === item.temp_employee_id) {
+          guestProfile.employeeId = realEmployeeId;
+          persistGuestProfile(guestProfile);
+        }
+      }
+      await removeOfflineItem(item.id);
+      syncedCount++;
+    } catch (err) {
+      console.error("Gagal menyinkronkan penambahan karyawan tamu:", err);
+      errorCount++;
+      if (err.message && err.message.includes("already registered")) {
+        await removeOfflineItem(item.id);
+      }
+    }
+  }
+
+  // 2. Sinkronkan Pemeriksaan Harian (Checkup)
+  for (const item of checkupItems) {
+    try {
+      let targetEmployeeId = item.employee_id;
+      if (resolvedIdMap.has(targetEmployeeId)) {
+        targetEmployeeId = resolvedIdMap.get(targetEmployeeId);
+      }
+
+      let savedCheckup;
+      if (item.is_guest) {
+        const { data, error } = await client.rpc("submit_guest_checkup", {
+          p_employee_id: targetEmployeeId,
+          p_device_token: item.device_token || guestProfile?.deviceToken,
+          p_systolic: item.payload.systolic,
+          p_diastolic: item.payload.diastolic,
+          p_temperature_c: item.payload.temperature_c,
+          p_fatigue_level: item.payload.fatigue_level,
+          p_sleep_quality: item.payload.sleep_quality,
+          p_symptoms: item.payload.symptoms,
+          p_notes: item.payload.notes
+        });
+        if (error) throw error;
+        savedCheckup = Array.isArray(data) ? data[0] : data;
+      } else {
+        const { data, error } = await client
+          .from("checkups")
+          .insert({ ...item.payload, employee_id: targetEmployeeId })
+          .select("id, checked_at, readiness_status")
+          .single();
+        if (error) throw error;
+        savedCheckup = data;
+      }
+
+      const checkupId = savedCheckup?.id || savedCheckup?.checkup_id;
+      if (checkupId && item.whatsapp) {
+        dispatchWhatsAppNotification(checkupId, item.whatsapp);
+      }
+
+      await removeOfflineItem(item.id);
+      syncedCount++;
+    } catch (err) {
+      console.error("Gagal menyinkronkan checkup offline:", err);
+      if (err.code === "23505" || (err.message && err.message.includes("sudah mengisi checkup hari ini"))) {
+        await removeOfflineItem(item.id);
+        syncedCount++;
+      } else if (["P1001", "P1002", "P1003"].includes(err.code)) {
+        await removeOfflineItem(item.id);
+        rejectedCheckups.push(err.message);
+        errorCount++;
+      } else {
+        errorCount++;
+      }
+    }
+  }
+
+  isSyncing = false;
+  await updateNetworkAndQueueUI();
+
+  if (employeeItems.length > 0 && guestMode) {
+    try {
+      await loadGuestDirectory();
+    } catch (_) {}
+  }
+
+  if (syncedCount > 0 && !guestMode && currentUser) {
+    try {
+      await loadCheckups();
+    } catch (_) {}
+  }
+  if (syncedCount > 0) {
+    try {
+      const dailyCheckup = guestMode
+        ? await loadGuestDailyStatus()
+        : currentProfile?.role === "employee"
+          ? await loadAuthenticatedDailyCheckup(currentEmployeeId)
+          : null;
+      if (dailyCheckup) showDailyCheckupStatus(dailyCheckup);
+      else if (rejectedCheckups.length > 0) showCheckupForm(2);
+    } catch (error) {
+      console.error("Could not refresh the daily DCU status after queue sync:", error);
+      showToast(`Antrean terkirim, tetapi status DCU gagal diperbarui: ${error.message}`, true);
+    }
+  }
+  let syncMessage = syncedCount > 0
+    ? `${syncedCount} data antrean offline berhasil disinkronkan ke server.`
+    : "";
+  if (rejectedCheckups.length > 0) {
+    const reasons = [...new Set(rejectedCheckups)].slice(0, 2).join(" ");
+    const extraCount = rejectedCheckups.length > 2 ? ` (+${rejectedCheckups.length - 2} penolakan lain)` : "";
+    const retryCount = errorCount - rejectedCheckups.length;
+    const retryNotice = retryCount > 0 ? ` ${retryCount} antrean lain masih gagal dan akan dicoba kembali.` : "";
+    syncMessage += `${syncMessage ? " " : ""}${rejectedCheckups.length} antrean DCU ditolak dan dihapus: ${reasons}${extraCount}${retryNotice}`;
+  } else if (errorCount > 0) {
+    syncMessage += `${syncMessage ? " " : ""}${errorCount} antrean gagal disinkronkan. Akan dicoba kembali saat online.`;
+  }
+  if (syncMessage) showToast(syncMessage, errorCount > 0);
+  renderQueueModal();
+}
+
+async function loadGuestDirectory() {
+  let directory = [];
+  try {
+    if (!navigator.onLine) throw new Error("Offline");
+    const { data, error } = await client.rpc("get_guest_directory");
+    if (error) throw error;
+    directory = data ?? [];
+
+    departments = [...new Map(directory.map((row) => [
+      row.department_id,
+      { id: row.department_id, name: row.department_name }
+    ])).values()].sort((a, b) => a.name.localeCompare(b.name, "id"));
+    employees = directory.filter((row) => row.employee_id).map((row) => ({
+      id: row.employee_id,
+      department_id: row.department_id,
+      full_name: row.employee_name,
+      is_active: true
+    })).sort((a, b) => a.full_name.localeCompare(b.full_name, "id"));
+
+    // Simpan ke cache lokal IndexedDB (hanya data publik aman)
+    await saveDirectoryCache(departments, employees);
+  } catch (err) {
+    console.warn("Memuat direktori dari cache offline:", err);
+    try {
+      const cached = await getDirectoryCache();
+      if (cached && (cached.departments?.length > 0 || cached.employees?.length > 0)) {
+        departments = cached.departments || [];
+        employees = cached.employees || [];
+        showToast("Menggunakan direktori tersimpan (offline).");
+      } else {
+        throw new Error("Data karyawan belum tersedia offline. Hubungkan ke internet setidaknya sekali.");
+      }
+    } catch (cacheErr) {
+      throw cacheErr;
+    }
+  }
+
+  // Gabungkan penambahan karyawan tamu yang masih berada di antrean lokal
+  try {
+    const queue = await getPendingOfflineQueue();
+    const pendingGuests = queue.filter((i) => i.action === "add_guest_employee");
+    for (const item of pendingGuests) {
+      if (item.temp_employee_id && !employees.some((e) => e.id === item.temp_employee_id)) {
+        employees.push({
+          id: item.temp_employee_id,
+          department_id: item.payload.p_department_id,
+          full_name: item.payload.p_full_name,
+          employment_status: item.payload.p_employment_status,
+          job_title: item.payload.p_job_title,
+          work_pattern: item.payload.p_work_pattern,
+          is_active: true
+        });
+      }
+    }
+    employees.sort((a, b) => a.full_name.localeCompare(b.full_name, "id"));
+  } catch (_) {}
 
   populateDepartmentSelect(departmentSelect);
   populateDepartmentSelect(document.querySelector("#profile-department"));
@@ -829,7 +1181,7 @@ async function loadEmployees() {
   const selectedEmployee = employeeSelect.value;
   const { data, error } = await client
     .from("employees")
-    .select("id, department_id, full_name, is_active")
+    .select("id, department_id, full_name, employment_status, job_title, work_pattern, is_active")
     .eq("is_active", true)
     .order("full_name");
   if (error) throw error;
@@ -1023,15 +1375,22 @@ function reportText(payload, status, checkedAt, employeeName, departmentName) {
   ].filter(Boolean).join("\n");
 }
 
-function showResult(payload, status, checkedAt) {
+function showResult(payload, status, checkedAt, isOffline = false) {
   const selectedEmployee = employees.find((employee) => employee.id === payload.employee_id);
   const departmentName = departments.find((department) => department.id === selectedEmployee?.department_id)?.name ?? "—";
   const employeeName = selectedEmployee?.full_name ?? "Karyawan";
-  const detail = statusDetails[status];
+  const detail = statusDetails[status] ?? statusDetails.need_observation;
   const text = reportText(payload, status, checkedAt, employeeName, departmentName);
   const urgentSymptoms = payload.symptoms.breathing_difficulty
     || payload.symptoms.chest_pain
     || payload.symptoms.fainting;
+
+  const offlineNoticeHtml = isOffline
+    ? `<div class="mt-3 flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+        <i data-lucide="cloud-off" class="h-4 w-4 shrink-0 text-amber-700"></i>
+        <span><b>Tersimpan di antrean offline.</b> Hasil merupakan evaluasi lokal dan akan otomatis disinkronkan saat terhubung internet.</span>
+       </div>`
+    : "";
 
   resultCard.className = `panel-card result-card ${detail.result} mt-5`;
   resultCard.innerHTML = `<div class="flex items-start gap-3">
@@ -1042,6 +1401,7 @@ function showResult(payload, status, checkedAt) {
       <p class="mt-1 text-xs text-slate-500">${escapeHtml(employeeName)} · ${escapeHtml(formatDate(checkedAt))}</p>
     </div>
   </div>
+  ${offlineNoticeHtml}
   <p class="mt-3 text-xs leading-5 text-slate-600">${status === "rest_recommended"
     ? urgentSymptoms
       ? "Cari pertolongan medis segera untuk gejala seperti sesak napas, nyeri dada, atau pingsan."
@@ -1097,6 +1457,77 @@ async function submitCheckup(event) {
   const payload = collectCheckup();
   const button = document.querySelector("#submit-checkup");
   setBusy(button, true, "Menyimpan…");
+
+  const isOffline = !navigator.onLine;
+
+  const handleOfflineSubmission = async () => {
+    const preliminaryStatus = evaluateReadiness(payload);
+    const measuredAt = new Date().toISOString();
+    const employeePhone = guestMode
+      ? (guestProfile?.whatsapp || document.querySelector("#checkup-whatsapp")?.value || "")
+      : "";
+
+    await enqueueOfflineItem({
+      action: "submit_checkup",
+      is_guest: guestMode,
+      employee_id: payload.employee_id,
+      device_token: guestMode ? guestProfile?.deviceToken : null,
+      payload,
+      measured_at: measuredAt,
+      preliminary_status: preliminaryStatus,
+      whatsapp: employeePhone || null
+    });
+
+    clearCheckupDraft(payload.employee_id);
+    showResult(payload, preliminaryStatus, measuredAt, true);
+
+    checkupForm.reset();
+    departmentSelect.disabled = !guestMode && !isAdmin() && Boolean(currentEmployeeId);
+    if (!guestMode && !isAdmin() && currentEmployeeId) {
+      const ownEmployee = employees.find((employee) => employee.id === currentEmployeeId);
+      departmentSelect.value = ownEmployee.department_id;
+      updateEmployeeOptions();
+      employeeSelect.value = ownEmployee.id;
+      employeeSelect.disabled = true;
+    } else {
+      updateEmployeeOptions();
+    }
+
+    if (guestMode) {
+      syncGuestProfileToCheckup();
+      syncGuestProfileForm();
+      showDailyCheckupStatus({
+        ...payload,
+        checked_at: measuredAt,
+        readiness_status: preliminaryStatus,
+        is_offline: true
+      });
+    } else if (currentProfile?.role === "employee") {
+      showDailyCheckupStatus({
+        ...payload,
+        checked_at: measuredAt,
+        readiness_status: preliminaryStatus,
+        is_offline: true
+      });
+    }
+    updateTemperatureDisplay();
+    if (!guestMode && currentProfile?.role !== "employee") setActiveStep(1);
+    await updateNetworkAndQueueUI();
+    showToast("DCU disimpan di antrean offline. Otomatis dikirim saat online.");
+  };
+
+  if (isOffline) {
+    try {
+      await handleOfflineSubmission();
+    } catch (err) {
+      console.error("Gagal menyimpan ke antrean offline:", err);
+      showToast(`Gagal menyimpan antrean offline: ${err.message}`, true);
+    } finally {
+      setBusy(button, false);
+    }
+    return;
+  }
+
   try {
     let savedCheckup;
     if (guestMode) {
@@ -1125,12 +1556,26 @@ async function submitCheckup(event) {
       if (error) throw error;
       savedCheckup = data;
     }
+    let canSubmitMore = false;
+    let submissionStatusError = null;
+    if (guestMode || currentProfile?.role === "employee") {
+      const { data, error } = await client.rpc("can_submit_additional_dcu", {
+        p_employee_id: payload.employee_id,
+        p_device_token: guestMode ? guestProfile.deviceToken : null
+      });
+      if (error) {
+        console.error("Could not check the remaining daily DCU limit:", error);
+        submissionStatusError = error;
+      } else {
+        canSubmitMore = Boolean(data);
+      }
+    }
     clearCheckupDraft(payload.employee_id);
     const employeePhone = guestMode
       ? (guestProfile?.whatsapp || document.querySelector("#checkup-whatsapp")?.value || "")
       : "";
     const checkupId = savedCheckup?.id || savedCheckup?.checkup_id;
-    showResult(payload, savedCheckup.readiness_status, savedCheckup.checked_at);
+    showResult(payload, savedCheckup.readiness_status, savedCheckup.checked_at, false);
     if (checkupId && employeePhone) {
       dispatchWhatsAppNotification(checkupId, employeePhone);
     }
@@ -1151,22 +1596,35 @@ async function submitCheckup(event) {
       showDailyCheckupStatus({
         ...payload,
         checked_at: savedCheckup.checked_at,
-        readiness_status: savedCheckup.readiness_status
+        readiness_status: savedCheckup.readiness_status,
+        can_submit_more: canSubmitMore
       });
     } else if (currentProfile?.role === "employee") {
       showDailyCheckupStatus({
         ...payload,
         checked_at: savedCheckup.checked_at,
-        readiness_status: savedCheckup.readiness_status
+        readiness_status: savedCheckup.readiness_status,
+        can_submit_more: canSubmitMore
       });
     }
     updateTemperatureDisplay();
     if (!guestMode && currentProfile?.role !== "employee") setActiveStep(1);
-    showToast("Checkup berhasil disimpan.");
+    showToast(submissionStatusError
+      ? `Checkup berhasil disimpan, tetapi status batas pengisian berikutnya gagal diperiksa: ${submissionStatusError.message}`
+      : "Checkup berhasil disimpan.", Boolean(submissionStatusError));
 
     if (!guestMode) await loadCheckups();
   } catch (error) {
     console.error("Checkup save failed:", error);
+    if (!navigator.onLine || error.message?.includes("Failed to fetch") || error.name === "TypeError") {
+      try {
+        await handleOfflineSubmission();
+        return;
+      } catch (err) {
+        console.error("Gagal fallback antrean offline:", err);
+      }
+    }
+
     if (error.code === "23505") {
       showToast("Karyawan ini sudah mengisi checkup hari ini.", true);
       try {
@@ -1180,6 +1638,19 @@ async function submitCheckup(event) {
       }
     } else {
       showToast(`Checkup gagal disimpan: ${error.message}`, true);
+      if (error.code === "P1002") {
+        try {
+          const dailyCheckup = guestMode
+            ? await loadGuestDailyStatus()
+            : currentProfile?.role === "employee"
+              ? await loadAuthenticatedDailyCheckup(payload.employee_id)
+              : null;
+          if (dailyCheckup) showDailyCheckupStatus(dailyCheckup);
+        } catch (statusError) {
+          console.error("Could not refresh the daily DCU limit status:", statusError);
+          showToast(`Checkup ditolak dan status batas harian gagal diperbarui: ${statusError.message}`, true);
+        }
+      }
     }
   } finally {
     setBusy(button, false);
@@ -1195,6 +1666,14 @@ async function addEmployee(event) {
   }
   const departmentId = departmentSelect.value;
   const name = document.querySelector("#new-employee-name").value.trim();
+  const employeeMetadata = {
+    employment_status: document.querySelector("#new-employee-status").value || null,
+    job_title: document.querySelector("#new-employee-job-title").value.trim() || null,
+    work_pattern: document.querySelector("#new-employee-work-pattern").value || null
+  };
+  const isActive = isAdmin()
+    ? document.querySelector("#new-employee-active").checked
+    : true;
   if (!departmentId || !name) {
     showToast("Departemen dan nama karyawan wajib diisi.", true);
     return;
@@ -1204,34 +1683,98 @@ async function addEmployee(event) {
   setBusy(button, true, "Menyimpan…");
   try {
     let employee;
-    if (canAddAsGuest) {
-      const { data, error } = await client.rpc("add_guest_employee", {
-        p_department_id: departmentId,
-        p_full_name: name
-      });
-      if (error) throw error;
-      employee = Array.isArray(data) ? data[0] : data;
-      if (!employee?.employee_id) {
-        throw new Error("Respons penambahan nama tidak lengkap.");
-      }
+    const isOffline = !navigator.onLine;
+
+    if (canAddAsGuest && isOffline) {
+      const tempId = `temp_emp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
       employee = {
-        id: employee.employee_id,
-        department_id: employee.department_id,
-        full_name: employee.employee_name,
+        id: tempId,
+        department_id: departmentId,
+        full_name: name,
+        employment_status: employeeMetadata.employment_status,
+        job_title: employeeMetadata.job_title,
+        work_pattern: employeeMetadata.work_pattern,
         is_active: true
       };
+      await enqueueOfflineItem({
+        action: "add_guest_employee",
+        temp_employee_id: tempId,
+        payload: {
+          p_department_id: departmentId,
+          p_full_name: name,
+          p_employment_status: employeeMetadata.employment_status,
+          p_job_title: employeeMetadata.job_title,
+          p_work_pattern: employeeMetadata.work_pattern
+        }
+      });
+      await updateNetworkAndQueueUI();
+    } else if (canAddAsGuest) {
+      try {
+        const { data, error } = await client.rpc("add_guest_employee", {
+          p_department_id: departmentId,
+          p_full_name: name,
+          p_employment_status: employeeMetadata.employment_status,
+          p_job_title: employeeMetadata.job_title,
+          p_work_pattern: employeeMetadata.work_pattern
+        });
+        if (error) throw error;
+        employee = Array.isArray(data) ? data[0] : data;
+        if (!employee?.employee_id) {
+          throw new Error("Respons penambahan nama tidak lengkap.");
+        }
+        employee = {
+          id: employee.employee_id,
+          department_id: employee.department_id,
+          full_name: employee.employee_name,
+          employment_status: employee.employment_status,
+          job_title: employee.job_title,
+          work_pattern: employee.work_pattern,
+          is_active: true
+        };
+      } catch (networkError) {
+        if (!navigator.onLine || networkError.message?.includes("Failed to fetch") || networkError.name === "TypeError") {
+          const tempId = `temp_emp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+          employee = {
+            id: tempId,
+            department_id: departmentId,
+            full_name: name,
+            employment_status: employeeMetadata.employment_status,
+            job_title: employeeMetadata.job_title,
+            work_pattern: employeeMetadata.work_pattern,
+            is_active: true
+          };
+          await enqueueOfflineItem({
+            action: "add_guest_employee",
+            temp_employee_id: tempId,
+            payload: {
+              p_department_id: departmentId,
+              p_full_name: name,
+              p_employment_status: employeeMetadata.employment_status,
+              p_job_title: employeeMetadata.job_title,
+              p_work_pattern: employeeMetadata.work_pattern
+            }
+          });
+          await updateNetworkAndQueueUI();
+        } else {
+          throw networkError;
+        }
+      }
     } else {
+      // Admin/HR insertion - tetap 100% online
       const { data, error } = await client
         .from("employees")
         .insert({
           department_id: departmentId,
-          full_name: name
+          full_name: name,
+          ...employeeMetadata,
+          is_active: isActive
         })
-        .select("id, department_id, full_name, is_active")
+        .select("id, department_id, full_name, employment_status, job_title, work_pattern, is_active")
         .single();
       if (error) throw error;
       employee = data;
     }
+
     if (!employees.some((existing) => existing.id === employee.id)) {
       employees.push(employee);
     }
@@ -1257,7 +1800,9 @@ async function addEmployee(event) {
     }
     employeeModal.close();
     document.querySelector("#employee-form").reset();
-    showToast(canAddAsGuest ? "Nama karyawan berhasil ditambahkan." : "Master karyawan berhasil disimpan.");
+    showToast(employee.id.startsWith("temp_emp_")
+      ? "Nama karyawan disimpan ke antrean offline."
+      : (canAddAsGuest ? "Nama karyawan berhasil ditambahkan." : "Master karyawan berhasil disimpan."));
   } catch (error) {
     console.error("Employee save failed:", error);
     showToast(`Gagal menyimpan karyawan: ${error.message}`, true);
@@ -1490,18 +2035,28 @@ async function initializeApp(user) {
 
 async function initializeGuestApp() {
   guestStatusRequest += 1;
-  const { data: enabled, error: settingsError } = await client.rpc("is_guest_checkups_enabled");
-  if (settingsError) throw settingsError;
-  if (!enabled) {
-    throw new Error("Mode tamu belum diaktifkan di Supabase. Lihat guest_mode.sql.");
-  }
-  await syncAppTimezone();
+  try {
+    if (!navigator.onLine) throw new Error("Offline");
+    const { data: enabled, error: settingsError } = await client.rpc("is_guest_checkups_enabled");
+    if (settingsError) throw settingsError;
+    if (!enabled) {
+      throw new Error("Mode tamu belum diaktifkan di Supabase. Lihat guest_mode.sql.");
+    }
+    await syncAppTimezone();
 
-  guestEmployeeCreationEnabled = false;
-  if (ALLOW_GUEST_EMPLOYEE_CREATION) {
-    const employeeSetting = await client.rpc("is_guest_employee_creation_enabled");
-    if (employeeSetting.error) throw employeeSetting.error;
-    guestEmployeeCreationEnabled = Boolean(employeeSetting.data);
+    guestEmployeeCreationEnabled = false;
+    if (ALLOW_GUEST_EMPLOYEE_CREATION) {
+      const employeeSetting = await client.rpc("is_guest_employee_creation_enabled");
+      if (employeeSetting.error) throw employeeSetting.error;
+      guestEmployeeCreationEnabled = Boolean(employeeSetting.data);
+    }
+  } catch (err) {
+    if (!navigator.onLine || err.message?.includes("Failed to fetch") || err.name === "TypeError" || err.message === "Offline") {
+      console.warn("Inisialisasi mode tamu dalam status offline:", err);
+      guestEmployeeCreationEnabled = Boolean(ALLOW_GUEST_EMPLOYEE_CREATION);
+    } else {
+      throw err;
+    }
   }
 
   guestMode = true;
@@ -1899,12 +2454,36 @@ function bindEvents() {
       setBusy(button, false);
     }
   });
+
+  window.addEventListener("online", () => {
+    updateNetworkAndQueueUI();
+    syncOfflineQueue(false);
+  });
+  window.addEventListener("offline", () => {
+    updateNetworkAndQueueUI();
+  });
+  offlineQueueBadge?.addEventListener("click", openQueueModal);
+  manualSyncButton?.addEventListener("click", () => syncOfflineQueue(true));
+  triggerSyncBtn?.addEventListener("click", () => syncOfflineQueue(true));
+  closeQueueModalBtn?.addEventListener("click", () => queueModal?.close());
+  closeQueueBtn?.addEventListener("click", () => queueModal?.close());
 }
 async function boot() {
   bindEvents();
   updateTemperatureDisplay();
   setActiveStep(1);
   refreshIcons();
+
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("./sw.js").catch((err) => {
+      console.warn("ServiceWorker registration failed:", err);
+    });
+  }
+
+  await updateNetworkAndQueueUI();
+  if (navigator.onLine) {
+    syncOfflineQueue(false);
+  }
 
   if (!supabaseFactory) {
     await showLogin();
