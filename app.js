@@ -30,6 +30,7 @@ let departments = [];
 let employees = [];
 let checkups = [];
 let todayCheckupCount = null;
+let todayReadinessCounts = null;
 let activeEmployeeCount = null;
 let activeStep = 1;
 let toastTimeout;
@@ -841,7 +842,7 @@ async function loadCheckups() {
 
 async function loadDailyCoverage() {
   const { start, end } = jakartaDateRange();
-  const [checkupResult, employeeResult] = await Promise.all([
+  const [checkupResult, employeeResult, readinessCountEntries] = await Promise.all([
     client
       .from("checkups")
       .select("id", { count: "exact", head: true })
@@ -850,12 +851,23 @@ async function loadDailyCoverage() {
     client
       .from("employees")
       .select("id", { count: "exact", head: true })
-      .eq("is_active", true)
+      .eq("is_active", true),
+    Promise.all(Object.keys(statusDetails).map(async (status) => {
+      const result = await client
+        .from("checkups")
+        .select("id", { count: "exact", head: true })
+        .gte("checked_at", start)
+        .lt("checked_at", end)
+        .eq("readiness_status", status);
+      if (result.error) throw result.error;
+      return [status, result.count ?? 0];
+    }))
   ]);
   if (checkupResult.error) throw checkupResult.error;
   if (employeeResult.error) throw employeeResult.error;
   todayCheckupCount = checkupResult.count ?? 0;
   activeEmployeeCount = employeeResult.count ?? 0;
+  todayReadinessCounts = Object.fromEntries(readinessCountEntries);
 }
 
 function renderHistory() {
@@ -892,11 +904,17 @@ function renderHistory() {
 }
 
 function renderSummary() {
-  const counts = {
-    fit: checkups.filter((item) => item.readiness_status === "fit_to_work").length,
-    observe: checkups.filter((item) => item.readiness_status === "need_observation").length,
-    rest: checkups.filter((item) => item.readiness_status === "rest_recommended").length
-  };
+  const counts = isAdmin() && todayReadinessCounts
+    ? {
+        fit: todayReadinessCounts.fit_to_work,
+        observe: todayReadinessCounts.need_observation,
+        rest: todayReadinessCounts.rest_recommended
+      }
+    : {
+        fit: checkups.filter((item) => item.readiness_status === "fit_to_work").length,
+        observe: checkups.filter((item) => item.readiness_status === "need_observation").length,
+        rest: checkups.filter((item) => item.readiness_status === "rest_recommended").length
+      };
   if (isAdmin() && todayCheckupCount !== null && activeEmployeeCount !== null) {
     const coverage = activeEmployeeCount
       ? Math.min(100, Math.round((todayCheckupCount / activeEmployeeCount) * 100))
@@ -1241,12 +1259,12 @@ function openSummaryFilter(filter) {
   const toInput = document.querySelector("#filter-to");
   const departmentInput = document.querySelector("#history-department");
   const readinessInput = document.querySelector("#history-readiness");
+  const today = jakartaToday();
 
+  fromInput.value = today;
+  toInput.value = today;
+  departmentInput.value = "";
   if (filter === "today") {
-    const today = jakartaToday();
-    fromInput.value = today;
-    toInput.value = today;
-    departmentInput.value = "";
     readinessInput.value = "";
   } else {
     readinessInput.value = filter;
@@ -1295,6 +1313,7 @@ async function initializeApp(user) {
   currentProfile = data;
   resetCheckupResponses();
   todayCheckupCount = null;
+  todayReadinessCounts = null;
   activeEmployeeCount = null;
   currentEmployeeId = null;
   if (currentProfile.role === "employee") {
@@ -1390,6 +1409,7 @@ async function initializeGuestApp() {
   currentEmployeeId = null;
   resetCheckupResponses();
   todayCheckupCount = null;
+  todayReadinessCounts = null;
   activeEmployeeCount = null;
   checkups = [];
   historyList.replaceChildren();
