@@ -15,6 +15,7 @@ const checkupForm = document.querySelector("#checkup-form");
 const checkupProgress = document.querySelector("#checkup-progress");
 const resultCard = document.querySelector("#result-card");
 const employeeModal = document.querySelector("#employee-modal");
+const exportConfirmModal = document.querySelector("#export-confirm-modal");
 const historyList = document.querySelector("#history-list");
 const guestProfileStorageKey = "daily-checkup-guest-profile-v1";
 const checkupDraftStoragePrefix = "daily-checkup-draft-v1";
@@ -1189,16 +1190,13 @@ function csvCell(value) {
   return `"${safeText.replace(/"/g, '""')}"`;
 }
 
-function exportCsv() {
-  if (!checkups.length) {
-    showToast("Tidak ada data untuk diekspor.", true);
-    return;
-  }
+function triggerCsvDownload(items) {
+  if (!items?.length) return false;
   const header = [
     "Waktu checkup", "Nama karyawan", "Departemen", "Tekanan sistolik", "Tekanan diastolik",
     "Suhu (C)", "Kelelahan (1-5)", "Kualitas tidur (1-5)", "Gejala", "Catatan", "Status"
   ];
-  const rows = checkups.map((item) => [
+  const rows = items.map((item) => [
     item.checked_at,
     item.employees?.full_name,
     item.employees?.departments?.name,
@@ -1220,6 +1218,37 @@ function exportCsv() {
   link.click();
   link.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return true;
+}
+
+async function exportCsv() {
+  const button = document.querySelector("#export-csv");
+  setBusy(button, true, "Mengecek data…");
+  try {
+    await loadCheckups();
+    if (!checkups.length) {
+      showToast("Tidak ada data untuk diekspor.", true);
+      return;
+    }
+
+    // Jika bukan Admin (misal karyawan atau HR), langsung unduh CSV tanpa modal opsi hapus
+    if (currentProfile?.role !== "admin") {
+      triggerCsvDownload(checkups);
+      showToast("File CSV riwayat berhasil diunduh.");
+      return;
+    }
+
+    // Khusus Admin: buka modal konfirmasi
+    const countElement = document.querySelector("#export-modal-count");
+    if (countElement) countElement.textContent = checkups.length;
+    exportConfirmModal.showModal();
+    refreshIcons();
+  } catch (error) {
+    console.error("Gagal menyiapkan ekspor CSV:", error);
+    showToast(`Gagal menyiapkan ekspor: ${error.message}`, true);
+  } finally {
+    setBusy(button, false);
+  }
 }
 
 function setTab(tabName, refreshData = true) {
@@ -1719,6 +1748,18 @@ function bindEvents() {
       showToast(`Gagal memuat filter: ${error.message}`, true);
     });
   });
+  document.querySelector("#filter-from").addEventListener("change", () => {
+    loadCheckups().catch((error) => {
+      console.error("Date from filter failed:", error);
+      showToast(`Gagal memuat filter tanggal: ${error.message}`, true);
+    });
+  });
+  document.querySelector("#filter-to").addEventListener("change", () => {
+    loadCheckups().catch((error) => {
+      console.error("Date to filter failed:", error);
+      showToast(`Gagal memuat filter tanggal: ${error.message}`, true);
+    });
+  });
   document.querySelector("#history-department").addEventListener("change", () => {
     loadCheckups().catch((error) => {
       console.error("Department filter failed:", error);
@@ -1735,6 +1776,55 @@ function bindEvents() {
     card.addEventListener("click", () => openSummaryFilter(card.dataset.summaryFilter));
   });
   document.querySelector("#export-csv").addEventListener("click", exportCsv);
+  document.querySelector("#close-export-modal")?.addEventListener("click", () => exportConfirmModal.close());
+  document.querySelector("#cancel-export-modal")?.addEventListener("click", () => exportConfirmModal.close());
+  exportConfirmModal?.addEventListener("click", (event) => {
+    if (event.target === exportConfirmModal) exportConfirmModal.close();
+  });
+  document.querySelector("#confirm-export-only")?.addEventListener("click", () => {
+    exportConfirmModal.close();
+    triggerCsvDownload(checkups);
+    showToast("File CSV riwayat berhasil diunduh.");
+  });
+  document.querySelector("#confirm-export-and-delete")?.addEventListener("click", async () => {
+    const button = document.querySelector("#confirm-export-and-delete");
+    setBusy(button, true, "Mengekspor & menghapus…");
+    try {
+      const itemsToDelete = [...checkups];
+      const idsToDelete = itemsToDelete.map((item) => item.id);
+      if (!idsToDelete.length) {
+        showToast("Tidak ada data untuk dihapus.", true);
+        exportConfirmModal.close();
+        return;
+      }
+
+      // 1. Unduh berkas CSV terlebih dahulu
+      triggerCsvDownload(itemsToDelete);
+
+      // 2. Beri jeda singkat agar browser memproses unduhan
+      await new Promise((resolve) => window.setTimeout(resolve, 600));
+
+      // 3. Panggil RPC Supabase untuk menghapus data di database
+      const { data, error } = await client.rpc("delete_checkups", {
+        p_checkup_ids: idsToDelete
+      });
+      if (error) throw error;
+
+      const deletedCount = (Array.isArray(data) ? data[0]?.deleted_count : data?.deleted_count) ?? idsToDelete.length;
+
+      // 4. Tutup modal & segarkan tampilan riwayat serta ringkasan
+      exportConfirmModal.close();
+      await loadCheckups();
+      if (isAdmin()) await loadDailyCoverage();
+
+      showToast(`File CSV berhasil diunduh dan ${deletedCount} riwayat berhasil dihapus.`);
+    } catch (error) {
+      console.error("Gagal menghapus riwayat checkup:", error);
+      showToast(`Gagal menghapus riwayat: ${error.message}`, true);
+    } finally {
+      setBusy(button, false);
+    }
+  });
 }
 async function boot() {
   bindEvents();
