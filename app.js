@@ -1,6 +1,7 @@
 import {
   ALLOW_GUEST_CHECKUPS,
   ALLOW_GUEST_EMPLOYEE_CREATION,
+  APP_TIMEZONE,
   SUPABASE_ANON_KEY,
   SUPABASE_URL
 } from "./config.js";
@@ -38,6 +39,27 @@ let toastTimeout;
 let realtimeChannel;
 let draftStorageErrorNotified = false;
 let guestStatusRequest = 0;
+let activeTimezone = (typeof APP_TIMEZONE === "string" && APP_TIMEZONE.trim())
+  ? APP_TIMEZONE.trim()
+  : "Asia/Jakarta";
+
+function getActiveTimezone() {
+  return activeTimezone;
+}
+
+async function syncAppTimezone() {
+  if (!client) return;
+  try {
+    const { data, error } = await client.rpc("get_app_timezone");
+    if (!error && data && typeof data === "string" && data.trim()) {
+      const candidate = data.trim();
+      new Intl.DateTimeFormat(undefined, { timeZone: candidate });
+      activeTimezone = candidate;
+    }
+  } catch (err) {
+    console.warn("Could not sync app timezone from database, using config default:", err);
+  }
+}
 
 const statusDetails = {
   fit_to_work: { label: "Fit to Work", pill: "status-fit", result: "result-fit", icon: "shield-check" },
@@ -99,30 +121,63 @@ function createDeviceToken() {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-function jakartaDateRange() {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Asia/Jakarta",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).formatToParts(new Date());
-  const dateParts = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  const start = new Date(Date.UTC(
-    Number(dateParts.year),
-    Number(dateParts.month) - 1,
-    Number(dateParts.day),
-    -7
-  ));
+function getTimezoneOffsetMs(date, timeZone = getActiveTimezone()) {
+  const utcParts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "UTC",
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+      hourCycle: "h23"
+    }).formatToParts(date).map((part) => [part.type, part.value])
+  );
+  const tzParts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+      hourCycle: "h23"
+    }).formatToParts(date).map((part) => [part.type, part.value])
+  );
+  const utcMs = Date.UTC(
+    Number(utcParts.year), Number(utcParts.month) - 1, Number(utcParts.day),
+    Number(utcParts.hour), Number(utcParts.minute), Number(utcParts.second)
+  );
+  const tzMs = Date.UTC(
+    Number(tzParts.year), Number(tzParts.month) - 1, Number(tzParts.day),
+    Number(tzParts.hour), Number(tzParts.minute), Number(tzParts.second)
+  );
+  return tzMs - utcMs;
+}
+
+function getAppToday(timeZone = getActiveTimezone()) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).formatToParts(new Date()).map((part) => [part.type, part.value])
+  );
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function getDateRangeForDate(dateStr, timeZone = getActiveTimezone()) {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  const utcTarget = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
+  const offsetMs = getTimezoneOffsetMs(utcTarget, timeZone);
+  const start = new Date(utcTarget.getTime() - offsetMs);
   const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
   return { start: start.toISOString(), end: end.toISOString() };
 }
 
-function jakartaDateRangeForDate(date) {
-  const [year, month, day] = date.split("-").map(Number);
-  const start = new Date(Date.UTC(year, month - 1, day, -7));
-  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
-  return { start: start.toISOString(), end: end.toISOString() };
+function getDateRange(timeZone = getActiveTimezone()) {
+  return getDateRangeForDate(getAppToday(timeZone), timeZone);
 }
+
+// Backward-compatibility aliases
+const jakartaToday = getAppToday;
+const jakartaDateRange = getDateRange;
+const jakartaDateRangeForDate = getDateRangeForDate;
 
 function checkupDraftScope() {
   const identity = guestMode ? guestProfile?.deviceToken : currentUser?.id;
@@ -194,7 +249,7 @@ function saveCheckupDraft() {
     [...checkupForm.querySelectorAll('input[name="symptoms"]')].map((input) => [input.value, input.checked])
   );
   const draft = {
-    savedOn: jakartaToday(),
+    savedOn: getAppToday(),
     departmentId: departmentSelect.value,
     employeeId,
     systolic: document.querySelector("#systolic").value,
@@ -229,7 +284,7 @@ function restoreCheckupDraft(employeeId) {
     const stored = localStorage.getItem(key);
     if (!stored) return false;
     draft = JSON.parse(stored);
-    if (draft.savedOn !== jakartaToday()) {
+    if (draft.savedOn !== getAppToday()) {
       localStorage.removeItem(key);
       return false;
     }
@@ -476,7 +531,7 @@ async function loadGuestDailyStatus(employeeId = guestProfile?.employeeId, devic
 }
 
 async function loadAuthenticatedDailyCheckup(employeeId) {
-  const { start, end } = jakartaDateRange();
+  const { start, end } = getDateRange();
   const { data, error } = await client
     .from("checkups")
     .select("id, employee_id, checked_at, systolic, diastolic, temperature_c, fatigue_level, sleep_quality, symptoms, notes, readiness_status")
@@ -609,6 +664,7 @@ function formatDate(value, includeTime = true) {
   if (!value) return "—";
   const date = new Date(value);
   return new Intl.DateTimeFormat("id-ID", {
+    timeZone: getActiveTimezone(),
     dateStyle: "medium",
     ...(includeTime ? { timeStyle: "short" } : {})
   }).format(date);
@@ -820,11 +876,11 @@ async function loadCheckups() {
     throw new Error("Tanggal awal tidak boleh melewati tanggal akhir.");
   }
   if (filters.from) {
-    const { start } = jakartaDateRangeForDate(filters.from);
+    const { start } = getDateRangeForDate(filters.from);
     query = query.gte("checked_at", start);
   }
   if (filters.to) {
-    const { end } = jakartaDateRangeForDate(filters.to);
+    const { end } = getDateRangeForDate(filters.to);
     query = query.lt("checked_at", end);
   }
   if (filters.departmentId) query = query.eq("employees.department_id", filters.departmentId);
@@ -842,7 +898,7 @@ async function loadCheckups() {
 }
 
 async function loadDailyCoverage() {
-  const { start, end } = jakartaDateRange();
+  const { start, end } = getDateRange();
   const [checkupResult, employeeResult, readinessCountEntries] = await Promise.all([
     client
       .from("checkups")
@@ -1213,7 +1269,7 @@ function triggerCsvDownload(items) {
   const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
   const link = document.createElement("a");
   link.href = url;
-  link.download = `daily-checkup-${new Date().toISOString().slice(0, 10)}.csv`;
+  link.download = `daily-checkup-${getAppToday()}.csv`;
   document.body.append(link);
   link.click();
   link.remove();
@@ -1272,23 +1328,12 @@ function setTab(tabName, refreshData = true) {
   }
 }
 
-function jakartaToday() {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Asia/Jakarta",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).formatToParts(new Date());
-  const dateParts = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
-}
-
 function openSummaryFilter(filter) {
   const fromInput = document.querySelector("#filter-from");
   const toInput = document.querySelector("#filter-to");
   const departmentInput = document.querySelector("#history-department");
   const readinessInput = document.querySelector("#history-readiness");
-  const today = jakartaToday();
+  const today = getAppToday();
 
   fromInput.value = today;
   toInput.value = today;
@@ -1340,6 +1385,7 @@ async function initializeApp(user) {
     throw new Error("Akun belum memiliki profil akses. Hubungi administrator.");
   }
   currentProfile = data;
+  await syncAppTimezone();
   resetCheckupResponses();
   todayCheckupCount = null;
   todayReadinessCounts = null;
@@ -1357,6 +1403,7 @@ async function initializeApp(user) {
   loginScreen.classList.remove("flex");
   appShell.classList.remove("hidden");
   document.querySelector("#today-label").textContent = new Intl.DateTimeFormat("id-ID", {
+    timeZone: getActiveTimezone(),
     weekday: "long", day: "numeric", month: "long", year: "numeric"
   }).format(new Date());
   document.querySelector("#history-department-wrap").classList.toggle("hidden", !isAdmin());
@@ -1422,6 +1469,7 @@ async function initializeGuestApp() {
   if (!enabled) {
     throw new Error("Mode tamu belum diaktifkan di Supabase. Lihat guest_mode.sql.");
   }
+  await syncAppTimezone();
 
   guestEmployeeCreationEnabled = false;
   if (ALLOW_GUEST_EMPLOYEE_CREATION) {
@@ -1845,6 +1893,7 @@ async function boot() {
   client = supabaseFactory(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
   });
+  await syncAppTimezone();
 
   client.auth.onAuthStateChange((_event, session) => {
     if (!session) {
