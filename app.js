@@ -1068,6 +1068,25 @@ async function copyReport() {
   }
 }
 
+async function dispatchWhatsAppNotification(checkupId, employeePhone) {
+  if (!checkupId || !employeePhone || !client?.functions) return;
+  try {
+    const { data, error } = await client.functions.invoke("send-wa-notification", {
+      body: {
+        checkup_id: checkupId,
+        employee_phone: employeePhone
+      }
+    });
+    if (error) {
+      console.warn("WhatsApp notification invoke warning:", error);
+    } else if (data?.success) {
+      console.info(`WhatsApp notification dispatched: ${data.sent} sent, ${data.failed} failed.`);
+    }
+  } catch (err) {
+    console.warn("WhatsApp notification background dispatch failed:", err);
+  }
+}
+
 async function submitCheckup(event) {
   event.preventDefault();
   if (!validateStep(1) || !validateStep(2)) {
@@ -1107,7 +1126,14 @@ async function submitCheckup(event) {
       savedCheckup = data;
     }
     clearCheckupDraft(payload.employee_id);
+    const employeePhone = guestMode
+      ? (guestProfile?.whatsapp || document.querySelector("#checkup-whatsapp")?.value || "")
+      : "";
+    const checkupId = savedCheckup?.id || savedCheckup?.checkup_id;
     showResult(payload, savedCheckup.readiness_status, savedCheckup.checked_at);
+    if (checkupId && employeePhone) {
+      dispatchWhatsAppNotification(checkupId, employeePhone);
+    }
     checkupForm.reset();
     departmentSelect.disabled = !guestMode && !isAdmin() && Boolean(currentEmployeeId);
     if (!guestMode && !isAdmin() && currentEmployeeId) {
