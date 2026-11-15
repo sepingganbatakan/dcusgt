@@ -121,6 +121,7 @@ export async function enqueueOfflineItem(item) {
   const queueItem = {
     id: item.id || `queue_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     action: item.action, // "add_guest_employee" | "submit_checkup"
+    is_guest: Boolean(item.is_guest),
     temp_employee_id: item.temp_employee_id || null,
     employee_id: item.employee_id || null,
     device_token: item.device_token || null,

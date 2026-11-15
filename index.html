@@ -81,7 +81,7 @@
         </div>
         <div id="checkup-identity-summary" class="mb-4 hidden items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
           <p class="min-w-0 text-xs leading-5 text-slate-600"><span class="font-semibold text-slate-800">Profil tersimpan:</span> <span id="checkup-identity-name"></span><span class="mx-1 text-slate-400">·</span><span id="checkup-identity-department"></span></p>
-          <button id="edit-checkup-identity" class="shrink-0 text-xs font-bold text-blue-700 underline decoration-blue-200 underline-offset-2 hover:text-blue-900" type="button">Ubah</button>
+          <button id="edit-checkup-identity" class="secondary-icon-button shrink-0" type="button" aria-label="Ubah profil" title="Ubah profil"><i data-lucide="pencil"></i></button>
         </div>
         <div id="daily-checkup-completed-notice" class="daily-checkup-notice mb-4 hidden" role="status" aria-live="polite">
           <i data-lucide="circle-check"></i>
@@ -104,18 +104,35 @@
           <section class="checkup-step space-y-4" data-step="1">
             <div class="panel-card">
               <div class="mb-4 flex items-center gap-2"><i data-lucide="user-round" class="section-icon"></i><h2 class="section-title">Identitas</h2></div>
-              <label class="field-label" for="department-select">Departemen</label>
-              <select id="department-select" class="field-input mt-2" required>
+              <label class="field-label" id="department-tabs-label" for="department-select">Departemen</label>
+              <div id="department-tabs-wrap" class="department-tabs-wrap mt-2">
+                <div id="department-tabs" class="department-tabs flex gap-2 overflow-x-auto pb-1 scrollbar-none" role="tablist" aria-labelledby="department-tabs-label">
+                  <!-- Tab departemen diisi dinamis oleh JavaScript -->
+                </div>
+              </div>
+              <select id="department-select" class="sr-only" required aria-hidden="true" tabindex="-1">
                 <option value="">Pilih departemen</option>
               </select>
-              <div class="mt-4 flex items-end gap-2">
-                <div class="min-w-0 flex-1">
-                  <label class="field-label" for="employee-select">Nama karyawan</label>
-                  <select id="employee-select" class="field-input mt-2" required disabled>
-                    <option value="">Pilih departemen terlebih dahulu</option>
-                  </select>
+
+              <div class="mt-4">
+                <div class="flex items-center justify-between gap-2 mb-2">
+                  <label class="field-label" id="employee-list-label" for="employee-select">Nama karyawan <span id="employee-count-badge" class="font-normal text-slate-400"></span></label>
+                  <button id="open-employee-modal" class="secondary-button min-h-[36px] py-1 gap-1 px-2.5 text-[11px]" type="button" aria-label="Tambah karyawan baru" title="Tambah karyawan"><i data-lucide="user-plus"></i>Tambah</button>
                 </div>
-                <button id="open-employee-modal" class="secondary-button min-h-[46px] gap-1.5 px-2.5 text-[11px]" type="button" aria-label="Tambah karyawan baru" title="Tambah karyawan"><i data-lucide="user-plus"></i>Tambah</button>
+                <div id="employee-search-wrap" class="employee-search-wrap mb-2">
+                  <i data-lucide="search" class="employee-search-icon"></i>
+                  <input id="employee-search" type="search" class="employee-search-input" placeholder="Cari nama karyawan..." autocomplete="off">
+                  <button id="employee-search-clear" type="button" class="employee-search-clear hidden" aria-label="Hapus pencarian"><i data-lucide="x"></i></button>
+                </div>
+                <div id="employee-list-scroll-wrap" class="employee-list-scroll-wrap overflow-y-auto rounded-xl border border-slate-200 bg-slate-50/50 p-1.5" style="--visible-limit: 4;">
+                  <div id="employee-list" class="space-y-1.5" role="radiogroup" aria-labelledby="employee-list-label">
+                    <!-- Kartu nama pekerja diisi dinamis oleh JavaScript -->
+                  </div>
+                </div>
+                <p id="employee-scroll-hint" class="mt-1.5 flex items-center gap-1 text-[11px] text-slate-400 hidden"><i data-lucide="chevrons-down" class="h-3.5 w-3.5"></i> Scroll ke bawah untuk memilih nama karyawan lainnya</p>
+                <select id="employee-select" class="sr-only" required aria-hidden="true" tabindex="-1">
+                  <option value="">Pilih departemen terlebih dahulu</option>
+                </select>
               </div>
               <p id="employee-hint" class="mt-2 text-xs leading-5 text-slate-500"></p>
               <div id="checkup-whatsapp-wrap" class="mt-4 hidden">
@@ -259,18 +276,39 @@
         <div class="mb-5">
           <p class="eyebrow">PREFERENSI PERANGKAT</p>
           <h1 id="profile-heading" class="mt-1 font-display text-2xl font-extrabold tracking-tight text-slate-900">Profil pengunjung</h1>
-          <p class="mt-1 text-sm leading-5 text-slate-500">Informasi ini diingat di browser ini agar checkup berikutnya lebih cepat.</p>
+          <p class="mt-1 text-sm leading-5 text-slate-500">Lengkapi departemen, nama, dan nomor WhatsApp sebelum checkup. Informasi ini diingat di browser ini agar checkup berikutnya lebih cepat.</p>
         </div>
         <form id="guest-profile-form" class="panel-card">
-          <label class="field-label" for="profile-department">Departemen</label>
-          <select id="profile-department" class="field-input mt-2" required>
+          <label class="field-label" id="profile-department-tabs-label" for="profile-department">Departemen</label>
+          <div id="profile-department-tabs-wrap" class="department-tabs-wrap mt-2">
+            <div id="profile-department-tabs" class="department-tabs flex gap-2 overflow-x-auto pb-1 scrollbar-none" role="tablist" aria-labelledby="profile-department-tabs-label">
+              <!-- Tab departemen profil diisi dinamis oleh JavaScript -->
+            </div>
+          </div>
+          <select id="profile-department" class="sr-only" required aria-hidden="true" tabindex="-1">
             <option value="">Pilih departemen</option>
           </select>
-          <label class="field-label mt-4 block" for="profile-employee">Nama karyawan</label>
-          <select id="profile-employee" class="field-input mt-2" required disabled>
-            <option value="">Pilih departemen terlebih dahulu</option>
-          </select>
-          <button id="profile-add-employee" class="secondary-button mt-3 w-full" type="button"><i data-lucide="user-plus"></i> Nama belum ada? Tambahkan</button>
+
+          <div class="mt-4">
+            <div class="flex items-center justify-between gap-2 mb-2">
+              <label class="field-label" id="profile-employee-list-label" for="profile-employee">Nama karyawan <span id="profile-employee-count-badge" class="font-normal text-slate-400"></span></label>
+              <button id="profile-add-employee" class="secondary-button min-h-[36px] py-1 gap-1 px-2.5 text-[11px]" type="button" aria-label="Tambah karyawan baru" title="Tambah karyawan"><i data-lucide="user-plus"></i>Tambah</button>
+            </div>
+            <div id="profile-employee-search-wrap" class="employee-search-wrap mb-2">
+              <i data-lucide="search" class="employee-search-icon"></i>
+              <input id="profile-employee-search" type="search" class="employee-search-input" placeholder="Cari nama karyawan..." autocomplete="off">
+              <button id="profile-employee-search-clear" type="button" class="employee-search-clear hidden" aria-label="Hapus pencarian"><i data-lucide="x"></i></button>
+            </div>
+            <div id="profile-employee-list-scroll-wrap" class="employee-list-scroll-wrap overflow-y-auto rounded-xl border border-slate-200 bg-slate-50/50 p-1.5" style="--visible-limit: 4;">
+              <div id="profile-employee-list" class="space-y-1.5" role="radiogroup" aria-labelledby="profile-employee-list-label">
+                <!-- Kartu nama pekerja profil diisi dinamis oleh JavaScript -->
+              </div>
+            </div>
+            <p id="profile-employee-scroll-hint" class="mt-1.5 flex items-center gap-1 text-[11px] text-slate-400 hidden"><i data-lucide="chevrons-down" class="h-3.5 w-3.5"></i> Scroll ke bawah untuk memilih nama karyawan lainnya</p>
+            <select id="profile-employee" class="sr-only" required aria-hidden="true" tabindex="-1">
+              <option value="">Pilih departemen terlebih dahulu</option>
+            </select>
+          </div>
           <label class="field-label mt-4 block" for="profile-whatsapp">Nomor WhatsApp</label>
           <input id="profile-whatsapp" class="field-input mt-2" type="tel" inputmode="tel" autocomplete="tel" maxlength="24" placeholder="Contoh: 081234567890" required>
           <p class="mt-2 text-xs leading-5 text-slate-500">Nomor WhatsApp tidak dikirim ke database. Profil tersimpan lokal di browser/perangkat ini.</p>

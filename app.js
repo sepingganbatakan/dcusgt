@@ -2,6 +2,9 @@ import {
   ALLOW_GUEST_CHECKUPS,
   ALLOW_GUEST_EMPLOYEE_CREATION,
   APP_TIMEZONE,
+  DEFAULT_EMPLOYEE_DISPLAY_LIMIT,
+  DEPARTMENT_SELECTION_MODE,
+  EMPLOYEE_SELECTION_MODE,
   SUPABASE_ANON_KEY,
   SUPABASE_URL
 } from "./config.js";
@@ -63,6 +66,17 @@ let guestStatusRequest = 0;
 let activeTimezone = (typeof APP_TIMEZONE === "string" && APP_TIMEZONE.trim())
   ? APP_TIMEZONE.trim()
   : "Asia/Jakarta";
+let waNotificationsEnabled = false;
+let employeeDisplayLimit = (typeof DEFAULT_EMPLOYEE_DISPLAY_LIMIT === "number" && DEFAULT_EMPLOYEE_DISPLAY_LIMIT > 0)
+  ? DEFAULT_EMPLOYEE_DISPLAY_LIMIT
+  : 4;
+
+if (!["tabs", "dropdown"].includes(DEPARTMENT_SELECTION_MODE)) {
+  throw new Error('DEPARTMENT_SELECTION_MODE must be "tabs" or "dropdown".');
+}
+if (!["list", "dropdown"].includes(EMPLOYEE_SELECTION_MODE)) {
+  throw new Error('EMPLOYEE_SELECTION_MODE must be "list" or "dropdown".');
+}
 
 function getActiveTimezone() {
   return activeTimezone;
@@ -80,6 +94,40 @@ async function syncAppTimezone() {
   } catch (err) {
     console.warn("Could not sync app timezone from database, using config default:", err);
   }
+}
+
+async function syncWhatsAppNotificationSetting() {
+  if (!client) return;
+  try {
+    const { data, error } = await client.rpc("get_wa_notifications_enabled");
+    if (error) throw error;
+    if (typeof data !== "boolean") {
+      throw new Error("Supabase returned an invalid WhatsApp notification setting.");
+    }
+    waNotificationsEnabled = data;
+  } catch (err) {
+    console.warn("Could not sync WhatsApp notification setting; keeping the current value:", err);
+  }
+}
+
+function applyEmployeeDisplayLimitUI() {
+  const wrap = document.querySelector("#employee-list-scroll-wrap");
+  if (wrap) {
+    wrap.style.setProperty("--visible-limit", String(employeeDisplayLimit));
+  }
+}
+
+async function syncEmployeeDisplayLimit() {
+  if (!client) return;
+  try {
+    const { data, error } = await client.rpc("get_employee_display_limit");
+    if (!error && typeof data === "number" && data > 0) {
+      employeeDisplayLimit = data;
+    }
+  } catch (err) {
+    console.warn("Could not sync employee display limit from database, using fallback:", err);
+  }
+  applyEmployeeDisplayLimitUI();
 }
 
 const statusDetails = {
@@ -424,29 +472,51 @@ function populateDepartmentSelect(select, selectedId = "") {
   if (departments.some((department) => department.id === selectedId)) {
     select.value = selectedId;
   }
+  if (select === departmentSelect) {
+    renderDepartmentTabs();
+  } else if (select === document.querySelector("#profile-department")) {
+    renderProfileDepartmentTabs();
+  }
 }
 
 function updateProfileEmployeeOptions(selectedId = "") {
-  const departmentId = document.querySelector("#profile-department").value;
+  const departmentId = document.querySelector("#profile-department")?.value;
   const select = document.querySelector("#profile-employee");
+  if (!select) return;
   const employeeToSelect = selectedId || select.value;
-  const departmentEmployees = employees.filter((item) => item.department_id === departmentId && item.is_active);
+  const showAllEmployees = !departmentId && (
+    EMPLOYEE_SELECTION_MODE === "list"
+    || (DEPARTMENT_SELECTION_MODE === "tabs" && currentProfileTab === "all")
+  );
+  const departmentEmployees = employees.filter((item) =>
+    item.is_active && (item.department_id === departmentId || showAllEmployees)
+  );
   select.innerHTML = '<option value="">Pilih nama karyawan</option>';
   for (const employee of departmentEmployees) {
     const option = document.createElement("option");
     option.value = employee.id;
-    option.textContent = employee.full_name;
+    const departmentName = departments.find((department) => department.id === employee.department_id)?.name;
+    option.textContent = showAllEmployees && departmentName
+      ? `${employee.full_name} — ${departmentName}`
+      : employee.full_name;
     select.append(option);
   }
-  if (!departmentId) {
+  if (!departmentId && !showAllEmployees) {
     select.innerHTML = '<option value="">Pilih departemen terlebih dahulu</option>';
   } else if (!select.options.length || (select.options.length === 1 && !select.options[0].value)) {
     select.innerHTML = '<option value="">Belum ada karyawan terdaftar</option>';
   }
-  select.disabled = !departmentId || departmentEmployees.length === 0;
-  if (employees.some((item) => item.id === employeeToSelect && item.department_id === departmentId && item.is_active)) {
+  select.disabled = false;
+  if (employees.some((item) => item.id === employeeToSelect && item.is_active)) {
     select.value = employeeToSelect;
   }
+  if (DEPARTMENT_SELECTION_MODE === "dropdown") {
+    currentProfileTab = departmentId || "all";
+  } else if (departmentId) {
+    currentProfileTab = departmentId;
+  }
+  syncProfileDepartmentTabsUI(currentProfileTab);
+  renderProfileEmployeeList(currentProfileTab);
 }
 
 function syncGuestProfileToCheckup() {
@@ -456,6 +526,19 @@ function syncGuestProfileToCheckup() {
   employeeSelect.value = guestProfile.employeeId;
   document.querySelector("#checkup-whatsapp").value = guestProfile.whatsapp;
   renderCheckupIdentitySummary();
+}
+
+function hasValidGuestProfile() {
+  return Boolean(
+    guestProfile
+    && departments.some((department) => department.id === guestProfile.departmentId)
+    && employees.some((employee) =>
+      employee.id === guestProfile.employeeId
+      && employee.department_id === guestProfile.departmentId
+      && employee.is_active
+    )
+    && isValidWhatsApp(guestProfile.whatsapp)
+  );
 }
 
 function renderCheckupIdentitySummary() {
@@ -510,40 +593,37 @@ function showDailyCheckupStatus(checkup) {
     const spanEl = completedNotice.querySelector("span");
     if (boldEl) boldEl.textContent = canSubmitMore
       ? "DCU hari ini berhasil tersimpan."
-      : "Tidak ada kuota DCU hari ini atau pola kerja belum diisi.";
+      : "Anda sudah mengisi DCU untuk hari ini.";
     if (spanEl) spanEl.textContent = canSubmitMore
       ? "Anda masih dapat mengisi lagi sesuai jadwal dan batas harian."
-      : "Lengkapi pola kerja dengan HR, atau isi kembali pada hari berikutnya jika kuota sudah tercapai.";
+      : "Silakan isi kembali pada hari berikutnya.";
   }
   showResult(checkup, checkup.readiness_status, checkup.checked_at, Boolean(checkup?.is_offline));
   resultCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
 
-  // Add "Pilih karyawan lain" button for admin
-  if (isAdmin()) {
-    const existingBtn = document.querySelector('.admin-employee-switch-btn');
-    if (existingBtn) existingBtn.remove();
-    
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'primary-button mt-4 w-full admin-employee-switch-btn';
-    btn.innerHTML = '<i data-lucide="user-select" class="mr-2 icon-text-sm"></i>Pilih karyawan lain';
-    btn.addEventListener('click', () => {
-      hideDailyCheckupStatus();
-      setActiveStep(1);
-      departmentSelect.value = '';
-      updateEmployeeOptions();
-      employeeSelect.value = '';
-      checkupForm.classList.remove("hidden");
-      checkupProgress.classList.remove("hidden");
-      resultCard.classList.add("hidden");
-    });
-    const copyBtn = document.querySelector("#copy-report");
-    if (copyBtn) {
-      copyBtn.parentNode.insertBefore(btn, copyBtn.nextSibling);
-    } else {
-      resultCard.querySelector(".panel-card").appendChild(btn);
-    }
+  // Add "Pilih karyawan lain" button for all users (guest, employee, admin)
+  const existingBtn = document.querySelector('.admin-employee-switch-btn');
+  if (existingBtn) existingBtn.remove();
+  
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'secondary-button mt-4 w-full admin-employee-switch-btn';
+  btn.innerHTML = '<i data-lucide="user-round" class="mr-2 icon-text-sm"></i>Pilih karyawan lain';
+  btn.addEventListener('click', () => {
+    hideDailyCheckupStatus();
+    setActiveStep(1);
+    checkupForm.classList.remove("hidden");
+    checkupProgress.classList.remove("hidden");
+    resultCard.classList.add("hidden");
+    updateEmployeeOptions();
+  });
+  const copyBtn = document.querySelector("#copy-report");
+  if (copyBtn) {
+    copyBtn.parentNode.insertBefore(btn, copyBtn.nextSibling);
+  } else {
+    resultCard.querySelector(".panel-card")?.appendChild(btn);
   }
+  window.lucide?.createIcons();
 }
 
 function showCheckupForm(step = 2) {
@@ -689,8 +769,8 @@ async function checkSelectedGuestDailyStatus() {
   }
 }
 
-async function checkAdminSelectedEmployeeDailyStatus() {
-  if (!isAdmin()) return;
+async function checkAuthenticatedSelectedEmployeeDailyStatus() {
+  if (guestMode) return;
   const selectedEmployeeId = employeeSelect.value;
   const selectedDepartmentId = departmentSelect.value;
   const employee = employees.find((item) => item.id === selectedEmployeeId && item.department_id === selectedDepartmentId && item.is_active);
@@ -701,19 +781,36 @@ async function checkAdminSelectedEmployeeDailyStatus() {
   }
   
   // Check if employee has daily checkup for today
-  const dailyCheckup = await loadAuthenticatedDailyCheckup(selectedEmployeeId);
-  if (dailyCheckup) {
-    showDailyCheckupStatus(dailyCheckup);
-  } else {
+  try {
+    const dailyCheckup = await loadAuthenticatedDailyCheckup(selectedEmployeeId);
+    if (dailyCheckup) {
+      showDailyCheckupStatus(dailyCheckup);
+    } else {
+      showCheckupForm(1);
+    }
+  } catch (err) {
+    console.error("Could not check daily status for selected employee:", err);
     showCheckupForm(1);
   }
 }
 
+const checkAdminSelectedEmployeeDailyStatus = checkAuthenticatedSelectedEmployeeDailyStatus;
+
 function syncGuestProfileForm() {
   const profileDepartment = document.querySelector("#profile-department");
   populateDepartmentSelect(profileDepartment, guestProfile?.departmentId ?? "");
+  if (guestProfile?.departmentId) {
+    currentProfileTab = guestProfile.departmentId;
+  } else {
+    currentProfileTab = "all";
+  }
+  renderProfileDepartmentTabs();
   updateProfileEmployeeOptions(guestProfile?.employeeId ?? "");
   document.querySelector("#profile-whatsapp").value = guestProfile?.whatsapp ?? "";
+  renderProfileEmployeeList(currentProfileTab);
+  if (guestProfile?.employeeId) {
+    syncProfileEmployeeListUI(guestProfile.employeeId);
+  }
 }
 
 function openEmployeeModal(departmentId, canAddAsGuest) {
@@ -751,12 +848,15 @@ function formatDate(value, includeTime = true) {
 }
 
 function setActiveStep(step) {
+  if (guestMode && step === 1) step = 2;
   activeStep = step;
   document.querySelectorAll(".checkup-step").forEach((section) => {
     section.classList.toggle("hidden", Number(section.dataset.step) !== step);
   });
-  const percent = Math.round((step / 3) * 100);
-  document.querySelector("#step-caption").textContent = `LANGKAH ${step} DARI 3`;
+  const displayStep = guestMode ? step - 1 : step;
+  const totalSteps = guestMode ? 2 : 3;
+  const percent = Math.round((displayStep / totalSteps) * 100);
+  document.querySelector("#step-caption").textContent = `LANGKAH ${displayStep} DARI ${totalSteps}`;
   document.querySelector("#step-percent").textContent = `${percent}%`;
   document.querySelector("#progress-bar").style.width = `${percent}%`;
 }
@@ -825,31 +925,460 @@ function updateTemperatureDisplay() {
     : "Geser untuk memilih suhu tubuh.";
 }
 
+let currentCheckupTab = "all";
+let currentProfileTab = "all";
+let checkupSearchQuery = "";
+let profileSearchQuery = "";
+
+function renderDepartmentTabs() {
+  const container = document.querySelector("#department-tabs");
+  if (!container) return;
+
+  const totalActive = employees.filter((e) => e.is_active).length;
+
+  if (departmentSelect.value && currentCheckupTab !== "all") {
+    currentCheckupTab = departmentSelect.value;
+  }
+
+  container.innerHTML = "";
+
+  const allBtn = document.createElement("button");
+  allBtn.type = "button";
+  allBtn.className = `department-tab ${currentCheckupTab === "all" ? "is-active" : ""}`;
+  allBtn.setAttribute("role", "tab");
+  allBtn.setAttribute("aria-selected", currentCheckupTab === "all" ? "true" : "false");
+  allBtn.dataset.departmentId = "all";
+  allBtn.innerHTML = `<span>Semua</span><span class="department-tab-count">${totalActive}</span>`;
+  allBtn.addEventListener("click", () => {
+    currentCheckupTab = "all";
+    if (EMPLOYEE_SELECTION_MODE === "dropdown") {
+      departmentSelect.value = "";
+      departmentSelect.dispatchEvent(new Event("change"));
+    }
+    syncDepartmentTabsUI("all");
+    renderEmployeeList("all");
+  });
+  container.appendChild(allBtn);
+
+  // 2. Tab untuk masing-masing departemen
+  for (const dept of departments) {
+    const isActive = currentCheckupTab === dept.id;
+    const count = employees.filter((e) => e.department_id === dept.id && e.is_active).length;
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `department-tab ${isActive ? "is-active" : ""}`;
+    btn.setAttribute("role", "tab");
+    btn.setAttribute("aria-selected", isActive ? "true" : "false");
+    btn.dataset.departmentId = dept.id;
+    btn.innerHTML = `<span>${escapeHtml(dept.name)}</span><span class="department-tab-count">${count}</span>`;
+
+    btn.addEventListener("click", () => {
+      currentCheckupTab = dept.id;
+      departmentSelect.value = dept.id;
+      departmentSelect.dispatchEvent(new Event("change"));
+      syncDepartmentTabsUI(dept.id);
+      renderEmployeeList(dept.id);
+    });
+
+    container.appendChild(btn);
+  }
+
+  const activeBtn = container.querySelector(".department-tab.is-active");
+  if (activeBtn) {
+    activeBtn.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+  }
+}
+
+function syncDepartmentTabsUI(activeTabId = currentCheckupTab) {
+  const container = document.querySelector("#department-tabs");
+  if (!container) return;
+
+  currentCheckupTab = activeTabId;
+  const tabs = container.querySelectorAll(".department-tab");
+  tabs.forEach((tab) => {
+    const isMatch = tab.dataset.departmentId === activeTabId;
+    tab.classList.toggle("is-active", isMatch);
+    tab.setAttribute("aria-selected", isMatch ? "true" : "false");
+    if (isMatch) {
+      tab.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+    }
+  });
+}
+
+function renderEmployeeList(departmentId = currentCheckupTab) {
+  const listContainer = document.querySelector("#employee-list");
+  const scrollWrap = document.querySelector("#employee-list-scroll-wrap");
+  const countBadge = document.querySelector("#employee-count-badge");
+  const scrollHint = document.querySelector("#employee-scroll-hint");
+  if (!listContainer) return;
+
+  if (scrollWrap) {
+    scrollWrap.style.setProperty("--visible-limit", String(employeeDisplayLimit));
+  }
+
+  let deptEmployees;
+  if (departmentId === "all" || !departmentId) {
+    deptEmployees = employees.filter((e) => e.is_active);
+  } else {
+    deptEmployees = employees.filter((e) => e.department_id === departmentId && e.is_active);
+  }
+
+  let displayEmployees = deptEmployees;
+  if (checkupSearchQuery) {
+    displayEmployees = deptEmployees.filter((e) => {
+      const nameMatch = e.full_name?.toLowerCase().includes(checkupSearchQuery);
+      const titleMatch = e.job_title?.toLowerCase().includes(checkupSearchQuery);
+      const deptName = departments.find((d) => d.id === e.department_id)?.name?.toLowerCase();
+      const deptMatch = deptName?.includes(checkupSearchQuery);
+      return nameMatch || titleMatch || deptMatch;
+    });
+  }
+
+  if (countBadge) {
+    countBadge.textContent = `(${displayEmployees.length})`;
+  }
+
+  if (scrollHint) {
+    scrollHint.classList.toggle("hidden",
+      EMPLOYEE_SELECTION_MODE === "dropdown" || displayEmployees.length <= employeeDisplayLimit);
+  }
+
+  if (displayEmployees.length === 0) {
+    if (checkupSearchQuery) {
+      listContainer.innerHTML = `<div class="p-4 text-center text-xs text-slate-400">Tidak ada karyawan yang cocok dengan "${escapeHtml(checkupSearchQuery)}"</div>`;
+    } else {
+      listContainer.innerHTML = '<div class="p-4 text-center text-xs text-slate-400">Belum ada karyawan terdaftar di departemen ini</div>';
+    }
+    return;
+  }
+
+  const currentEmpId = employeeSelect.value;
+  listContainer.innerHTML = "";
+
+  for (const emp of displayEmployees) {
+    const isSelected = emp.id === currentEmpId;
+    const isOwn = !guestMode && currentEmployeeId && emp.id === currentEmployeeId;
+
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = `employee-card ${isSelected ? "is-selected" : ""}`;
+    card.setAttribute("role", "radio");
+    card.setAttribute("aria-checked", isSelected ? "true" : "false");
+    card.dataset.employeeId = emp.id;
+
+    let badgesHtml = "";
+    if (isOwn) {
+      badgesHtml += '<span class="employee-card-badge is-own">Akun Anda</span>';
+    }
+    if (departmentId === "all" || !departmentId || checkupSearchQuery) {
+      const deptName = departments.find((d) => d.id === emp.department_id)?.name;
+      if (deptName) {
+        badgesHtml += `<span class="employee-card-badge dept">${escapeHtml(deptName)}</span>`;
+      }
+    }
+    if (emp.work_pattern) {
+      const isShift = emp.work_pattern.toLowerCase().includes("shift") && !emp.work_pattern.toLowerCase().includes("non");
+      badgesHtml += `<span class="employee-card-badge ${isShift ? "shift" : "non-shift"}">${escapeHtml(emp.work_pattern)}</span>`;
+    }
+    if (emp.job_title) {
+      badgesHtml += `<span>${escapeHtml(emp.job_title)}</span>`;
+    } else if (emp.employment_status) {
+      badgesHtml += `<span>${escapeHtml(emp.employment_status)}</span>`;
+    }
+
+    card.innerHTML = `
+      <div class="employee-card-info">
+        <span class="employee-card-name">${escapeHtml(emp.full_name)}</span>
+        <div class="employee-card-meta">${badgesHtml}</div>
+      </div>
+      <div class="employee-card-radio">
+        <i data-lucide="check"></i>
+      </div>
+    `;
+
+    card.addEventListener("click", () => {
+      if (emp.department_id) {
+        departmentSelect.value = emp.department_id;
+        departmentSelect.dispatchEvent(new Event("change"));
+        if (currentCheckupTab !== "all") {
+          currentCheckupTab = emp.department_id;
+          syncDepartmentTabsUI(emp.department_id);
+        }
+      }
+      employeeSelect.value = emp.id;
+      employeeSelect.dispatchEvent(new Event("change"));
+      syncEmployeeListUI(emp.id);
+    });
+
+    listContainer.appendChild(card);
+  }
+
+  window.lucide?.createIcons();
+
+  const selectedCard = listContainer.querySelector(".employee-card.is-selected");
+  if (selectedCard) {
+    selectedCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+}
+
+function syncEmployeeListUI(selectedEmpId = employeeSelect.value) {
+  const listContainer = document.querySelector("#employee-list");
+  if (!listContainer) return;
+
+  const cards = listContainer.querySelectorAll(".employee-card");
+  cards.forEach((card) => {
+    const isMatch = card.dataset.employeeId === selectedEmpId;
+    card.classList.toggle("is-selected", isMatch);
+    card.setAttribute("aria-checked", isMatch ? "true" : "false");
+    if (isMatch) {
+      card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  });
+}
+
+function renderProfileDepartmentTabs() {
+  const container = document.querySelector("#profile-department-tabs");
+  if (!container) return;
+
+  const totalActive = employees.filter((e) => e.is_active).length;
+  const profileDept = document.querySelector("#profile-department");
+
+  if (profileDept?.value && currentProfileTab !== "all") {
+    currentProfileTab = profileDept.value;
+  }
+
+  container.innerHTML = "";
+
+  const allBtn = document.createElement("button");
+  allBtn.type = "button";
+  allBtn.className = `department-tab ${currentProfileTab === "all" ? "is-active" : ""}`;
+  allBtn.setAttribute("role", "tab");
+  allBtn.setAttribute("aria-selected", currentProfileTab === "all" ? "true" : "false");
+  allBtn.dataset.departmentId = "all";
+  allBtn.innerHTML = `<span>Semua</span><span class="department-tab-count">${totalActive}</span>`;
+  allBtn.addEventListener("click", () => {
+    currentProfileTab = "all";
+    if (EMPLOYEE_SELECTION_MODE === "dropdown" && profileDept) {
+      profileDept.value = "";
+      profileDept.dispatchEvent(new Event("change"));
+    }
+    syncProfileDepartmentTabsUI("all");
+    renderProfileEmployeeList("all");
+  });
+  container.appendChild(allBtn);
+
+  // 2. Tab masing-masing departemen
+  for (const dept of departments) {
+    const isActive = currentProfileTab === dept.id;
+    const count = employees.filter((e) => e.department_id === dept.id && e.is_active).length;
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `department-tab ${isActive ? "is-active" : ""}`;
+    btn.setAttribute("role", "tab");
+    btn.setAttribute("aria-selected", isActive ? "true" : "false");
+    btn.dataset.departmentId = dept.id;
+    btn.innerHTML = `<span>${escapeHtml(dept.name)}</span><span class="department-tab-count">${count}</span>`;
+
+    btn.addEventListener("click", () => {
+      currentProfileTab = dept.id;
+      if (profileDept) {
+        profileDept.value = dept.id;
+        profileDept.dispatchEvent(new Event("change"));
+      }
+      syncProfileDepartmentTabsUI(dept.id);
+      renderProfileEmployeeList(dept.id);
+    });
+
+    container.appendChild(btn);
+  }
+
+  const activeBtn = container.querySelector(".department-tab.is-active");
+  if (activeBtn) {
+    activeBtn.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+  }
+}
+
+function syncProfileDepartmentTabsUI(activeTabId = currentProfileTab) {
+  const container = document.querySelector("#profile-department-tabs");
+  if (!container) return;
+
+  currentProfileTab = activeTabId;
+  const tabs = container.querySelectorAll(".department-tab");
+  tabs.forEach((tab) => {
+    const isMatch = tab.dataset.departmentId === activeTabId;
+    tab.classList.toggle("is-active", isMatch);
+    tab.setAttribute("aria-selected", isMatch ? "true" : "false");
+    if (isMatch) {
+      tab.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+    }
+  });
+}
+
+function renderProfileEmployeeList(departmentId = currentProfileTab) {
+  const listContainer = document.querySelector("#profile-employee-list");
+  const scrollWrap = document.querySelector("#profile-employee-list-scroll-wrap");
+  const countBadge = document.querySelector("#profile-employee-count-badge");
+  const scrollHint = document.querySelector("#profile-employee-scroll-hint");
+  const profileEmpSelect = document.querySelector("#profile-employee");
+  const profileDeptSelect = document.querySelector("#profile-department");
+  if (!listContainer) return;
+
+  if (scrollWrap) {
+    scrollWrap.style.setProperty("--visible-limit", String(employeeDisplayLimit));
+  }
+
+  let deptEmployees;
+  if (departmentId === "all" || !departmentId) {
+    deptEmployees = employees.filter((e) => e.is_active);
+  } else {
+    deptEmployees = employees.filter((e) => e.department_id === departmentId && e.is_active);
+  }
+
+  let displayEmployees = deptEmployees;
+  if (profileSearchQuery) {
+    displayEmployees = deptEmployees.filter((e) => {
+      const nameMatch = e.full_name?.toLowerCase().includes(profileSearchQuery);
+      const titleMatch = e.job_title?.toLowerCase().includes(profileSearchQuery);
+      const deptName = departments.find((d) => d.id === e.department_id)?.name?.toLowerCase();
+      const deptMatch = deptName?.includes(profileSearchQuery);
+      return nameMatch || titleMatch || deptMatch;
+    });
+  }
+
+  if (countBadge) {
+    countBadge.textContent = `(${displayEmployees.length})`;
+  }
+
+  if (scrollHint) {
+    scrollHint.classList.toggle("hidden",
+      EMPLOYEE_SELECTION_MODE === "dropdown" || displayEmployees.length <= employeeDisplayLimit);
+  }
+
+  if (displayEmployees.length === 0) {
+    if (profileSearchQuery) {
+      listContainer.innerHTML = `<div class="p-4 text-center text-xs text-slate-400">Tidak ada karyawan yang cocok dengan "${escapeHtml(profileSearchQuery)}"</div>`;
+    } else {
+      listContainer.innerHTML = '<div class="p-4 text-center text-xs text-slate-400">Belum ada karyawan terdaftar di departemen ini</div>';
+    }
+    return;
+  }
+
+  const currentEmpId = profileEmpSelect ? profileEmpSelect.value : "";
+  listContainer.innerHTML = "";
+
+  for (const emp of displayEmployees) {
+    const isSelected = emp.id === currentEmpId;
+
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = `employee-card ${isSelected ? "is-selected" : ""}`;
+    card.setAttribute("role", "radio");
+    card.setAttribute("aria-checked", isSelected ? "true" : "false");
+    card.dataset.employeeId = emp.id;
+
+    let badgesHtml = "";
+    if (departmentId === "all" || !departmentId || profileSearchQuery) {
+      const deptName = departments.find((d) => d.id === emp.department_id)?.name;
+      if (deptName) {
+        badgesHtml += `<span class="employee-card-badge dept">${escapeHtml(deptName)}</span>`;
+      }
+    }
+    if (emp.work_pattern) {
+      const isShift = emp.work_pattern.toLowerCase().includes("shift") && !emp.work_pattern.toLowerCase().includes("non");
+      badgesHtml += `<span class="employee-card-badge ${isShift ? "shift" : "non-shift"}">${escapeHtml(emp.work_pattern)}</span>`;
+    }
+    if (emp.job_title) {
+      badgesHtml += `<span>${escapeHtml(emp.job_title)}</span>`;
+    } else if (emp.employment_status) {
+      badgesHtml += `<span>${escapeHtml(emp.employment_status)}</span>`;
+    }
+
+    card.innerHTML = `
+      <div class="employee-card-info">
+        <span class="employee-card-name">${escapeHtml(emp.full_name)}</span>
+        <div class="employee-card-meta">${badgesHtml}</div>
+      </div>
+      <div class="employee-card-radio">
+        <i data-lucide="check"></i>
+      </div>
+    `;
+
+    card.addEventListener("click", () => {
+      if (emp.department_id && profileDeptSelect) {
+        profileDeptSelect.value = emp.department_id;
+        profileDeptSelect.dispatchEvent(new Event("change"));
+        if (currentProfileTab !== "all") {
+          currentProfileTab = emp.department_id;
+          syncProfileDepartmentTabsUI(emp.department_id);
+        }
+      }
+      if (profileEmpSelect) {
+        profileEmpSelect.value = emp.id;
+        profileEmpSelect.dispatchEvent(new Event("change"));
+      }
+      syncProfileEmployeeListUI(emp.id);
+    });
+
+    listContainer.appendChild(card);
+  }
+
+  window.lucide?.createIcons();
+
+  const selectedCard = listContainer.querySelector(".employee-card.is-selected");
+  if (selectedCard) {
+    selectedCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+}
+
+function syncProfileEmployeeListUI(selectedEmpId) {
+  const listContainer = document.querySelector("#profile-employee-list");
+  if (!listContainer) return;
+
+  const cards = listContainer.querySelectorAll(".employee-card");
+  cards.forEach((card) => {
+    const isMatch = card.dataset.employeeId === selectedEmpId;
+    card.classList.toggle("is-selected", isMatch);
+    card.setAttribute("aria-checked", isMatch ? "true" : "false");
+    if (isMatch) {
+      card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  });
+}
+
 function updateEmployeeOptions() {
   const departmentId = guestMode && document.querySelector("#profile-tab").classList.contains("hidden")
     ? departmentSelect.value
     : guestMode
       ? document.querySelector("#profile-department").value
       : departmentSelect.value;
+  const showAllEmployees = !departmentId
+    && DEPARTMENT_SELECTION_MODE === "tabs"
+    && EMPLOYEE_SELECTION_MODE === "dropdown"
+    && currentCheckupTab === "all";
   const departmentEmployees = employees.filter((employee) =>
-    employee.department_id === departmentId && employee.is_active
+    employee.is_active && (employee.department_id === departmentId || showAllEmployees)
   );
   employeeSelect.innerHTML = '<option value="">Pilih nama karyawan</option>';
   for (const employee of departmentEmployees) {
     const option = document.createElement("option");
     option.value = employee.id;
-    option.textContent = employee.full_name;
+    const departmentName = departments.find((department) => department.id === employee.department_id)?.name;
+    option.textContent = showAllEmployees && departmentName
+      ? `${employee.full_name} — ${departmentName}`
+      : employee.full_name;
     employeeSelect.append(option);
   }
-  employeeSelect.disabled = !departmentId || departmentEmployees.length === 0;
-  if (!departmentId) {
+  employeeSelect.disabled = false;
+  if (!departmentId && !showAllEmployees) {
     employeeSelect.innerHTML = '<option value="">Pilih departemen terlebih dahulu</option>';
   } else if (departmentEmployees.length === 0) {
     employeeSelect.innerHTML = '<option value="">Belum ada karyawan terdaftar</option>';
   }
   const addButton = document.querySelector("#open-employee-modal");
   const canAddEmployee = isAdmin() || (guestMode && ALLOW_GUEST_EMPLOYEE_CREATION && guestEmployeeCreationEnabled);
-  addButton.disabled = !departmentId || !canAddEmployee;
+  addButton.disabled = false;
   addButton.title = canAddEmployee ? "Tambah nama karyawan" : "Hubungi HR untuk menambahkan karyawan";
   document.querySelector("#employee-hint").textContent = isAdmin()
     ? "Karyawan baru dapat ditambahkan oleh HR/admin."
@@ -857,6 +1386,47 @@ function updateEmployeeOptions() {
       ? "Nama belum ada? Tambahkan nama Anda sendiri."
       : "Tidak menemukan nama? Hubungi HR untuk menambahkan karyawan.";
   if (guestMode) updateProfileEmployeeOptions();
+
+  if (DEPARTMENT_SELECTION_MODE === "dropdown") {
+    currentCheckupTab = departmentId || "all";
+  }
+  syncDepartmentTabsUI(currentCheckupTab);
+  renderEmployeeList(currentCheckupTab);
+}
+
+function applySelectionModes() {
+  const departmentDropdown = DEPARTMENT_SELECTION_MODE === "dropdown";
+  const employeeDropdown = EMPLOYEE_SELECTION_MODE === "dropdown";
+
+  for (const [select, isDropdown] of [
+    [departmentSelect, departmentDropdown],
+    [document.querySelector("#profile-department"), departmentDropdown],
+    [employeeSelect, employeeDropdown],
+    [document.querySelector("#profile-employee"), employeeDropdown]
+  ]) {
+    select.classList.toggle("sr-only", !isDropdown);
+    select.classList.toggle("field-input", isDropdown);
+    select.classList.toggle("mt-2", isDropdown);
+    select.classList.toggle("w-full", isDropdown);
+    if (isDropdown) {
+      select.removeAttribute("aria-hidden");
+      select.removeAttribute("tabindex");
+    } else {
+      select.setAttribute("aria-hidden", "true");
+      select.tabIndex = -1;
+    }
+  }
+
+  document.querySelector("#department-tabs-wrap").classList.toggle("hidden", departmentDropdown);
+  document.querySelector("#profile-department-tabs-wrap").classList.toggle("hidden", departmentDropdown);
+  document.querySelector("#employee-search-wrap").classList.toggle("hidden", employeeDropdown);
+  document.querySelector("#employee-list-scroll-wrap").classList.toggle("hidden", employeeDropdown);
+  document.querySelector("#employee-scroll-hint").classList.toggle("hidden", employeeDropdown);
+  document.querySelector("#profile-employee-search-wrap").classList.toggle("hidden", employeeDropdown);
+  document.querySelector("#profile-employee-list-scroll-wrap").classList.toggle("hidden", employeeDropdown);
+  document.querySelector("#profile-employee-scroll-hint").classList.toggle("hidden", employeeDropdown);
+  document.querySelector("#employee-count-badge").classList.toggle("hidden", employeeDropdown);
+  document.querySelector("#profile-employee-count-badge").classList.toggle("hidden", employeeDropdown);
 }
 
 async function loadDepartments() {
@@ -882,6 +1452,9 @@ async function loadDepartments() {
   if (departments.some((department) => department.id === selectedHistoryDepartment)) {
     historyDepartment.value = selectedHistoryDepartment;
   }
+
+  renderDepartmentTabs();
+  renderProfileDepartmentTabs();
 }
 
 async function updateNetworkAndQueueUI() {
@@ -1025,10 +1598,12 @@ async function syncOfflineQueue(showToastNotice = false) {
       }
 
       let savedCheckup;
-      if (item.is_guest) {
+      const isGuestSubmission = Boolean(item.is_guest || guestMode || !currentUser);
+      if (isGuestSubmission) {
+        const deviceToken = item.device_token || guestProfile?.deviceToken || createDeviceToken();
         const { data, error } = await client.rpc("submit_guest_checkup", {
           p_employee_id: targetEmployeeId,
-          p_device_token: item.device_token || guestProfile?.deviceToken,
+          p_device_token: deviceToken,
           p_systolic: item.payload.systolic,
           p_diastolic: item.payload.diastolic,
           p_temperature_c: item.payload.temperature_c,
@@ -1193,12 +1768,15 @@ async function loadEmployees() {
     departmentSelect.value = ownEmployee.department_id;
     updateEmployeeOptions();
     employeeSelect.value = ownEmployee.id;
-    departmentSelect.disabled = true;
-    employeeSelect.disabled = true;
+    departmentSelect.disabled = false;
+    employeeSelect.disabled = false;
+    syncEmployeeListUI(ownEmployee.id);
   } else if (isAdmin()) {
     departmentSelect.disabled = false;
+    employeeSelect.disabled = false;
     if (employees.some((employee) => employee.id === selectedEmployee && employee.department_id === departmentSelect.value)) {
       employeeSelect.value = selectedEmployee;
+      syncEmployeeListUI(selectedEmployee);
     }
   } else {
     throw new Error("Akun belum ditautkan ke data karyawan. Hubungi administrator.");
@@ -1391,6 +1969,9 @@ function showResult(payload, status, checkedAt, isOffline = false) {
         <span><b>Tersimpan di antrean offline.</b> Hasil merupakan evaluasi lokal dan akan otomatis disinkronkan saat terhubung internet.</span>
        </div>`
     : "";
+  const copyReportButtonHtml = waNotificationsEnabled
+    ? ""
+    : `<button id="copy-report" class="secondary-button mt-4 w-full" type="button"><i data-lucide="copy"></i> Salin laporan (WhatsApp)</button>`;
 
   resultCard.className = `panel-card result-card ${detail.result} mt-5`;
   resultCard.innerHTML = `<div class="flex items-start gap-3">
@@ -1409,10 +1990,10 @@ function showResult(payload, status, checkedAt, isOffline = false) {
     : status === "need_observation"
       ? "Pantau kondisi Anda dan ikuti prosedur kesehatan di tempat kerja."
       : "Tetap jaga kesehatan dan ikuti prosedur keselamatan kerja."}</p>
-  <button id="copy-report" class="secondary-button mt-4 w-full" type="button"><i data-lucide="copy"></i> Salin laporan (WhatsApp)</button>`;
+  ${copyReportButtonHtml}`;
   resultCard.dataset.report = text;
   resultCard.classList.remove("hidden");
-  document.querySelector("#copy-report").addEventListener("click", copyReport);
+  resultCard.querySelector("#copy-report")?.addEventListener("click", copyReport);
   refreshIcons();
   resultCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
@@ -1471,7 +2052,7 @@ async function submitCheckup(event) {
       action: "submit_checkup",
       is_guest: guestMode,
       employee_id: payload.employee_id,
-      device_token: guestMode ? guestProfile?.deviceToken : null,
+      device_token: guestMode ? (guestProfile?.deviceToken || createDeviceToken()) : null,
       payload,
       measured_at: measuredAt,
       preliminary_status: preliminaryStatus,
@@ -1482,13 +2063,18 @@ async function submitCheckup(event) {
     showResult(payload, preliminaryStatus, measuredAt, true);
 
     checkupForm.reset();
-    departmentSelect.disabled = !guestMode && !isAdmin() && Boolean(currentEmployeeId);
-    if (!guestMode && !isAdmin() && currentEmployeeId) {
+    departmentSelect.disabled = false;
+    employeeSelect.disabled = false;
+    if (!guestMode && currentEmployeeId) {
       const ownEmployee = employees.find((employee) => employee.id === currentEmployeeId);
-      departmentSelect.value = ownEmployee.department_id;
-      updateEmployeeOptions();
-      employeeSelect.value = ownEmployee.id;
-      employeeSelect.disabled = true;
+      if (ownEmployee) {
+        departmentSelect.value = ownEmployee.department_id;
+        updateEmployeeOptions();
+        employeeSelect.value = ownEmployee.id;
+        syncEmployeeListUI(ownEmployee.id);
+      } else {
+        updateEmployeeOptions();
+      }
     } else {
       updateEmployeeOptions();
     }
@@ -1575,18 +2161,24 @@ async function submitCheckup(event) {
       ? (guestProfile?.whatsapp || document.querySelector("#checkup-whatsapp")?.value || "")
       : "";
     const checkupId = savedCheckup?.id || savedCheckup?.checkup_id;
+    await syncWhatsAppNotificationSetting();
     showResult(payload, savedCheckup.readiness_status, savedCheckup.checked_at, false);
     if (checkupId && employeePhone) {
       dispatchWhatsAppNotification(checkupId, employeePhone);
     }
     checkupForm.reset();
-    departmentSelect.disabled = !guestMode && !isAdmin() && Boolean(currentEmployeeId);
-    if (!guestMode && !isAdmin() && currentEmployeeId) {
+    departmentSelect.disabled = false;
+    employeeSelect.disabled = false;
+    if (!guestMode && currentEmployeeId) {
       const ownEmployee = employees.find((employee) => employee.id === currentEmployeeId);
-      departmentSelect.value = ownEmployee.department_id;
-      updateEmployeeOptions();
-      employeeSelect.value = ownEmployee.id;
-      employeeSelect.disabled = true;
+      if (ownEmployee) {
+        departmentSelect.value = ownEmployee.department_id;
+        updateEmployeeOptions();
+        employeeSelect.value = ownEmployee.id;
+        syncEmployeeListUI(ownEmployee.id);
+      } else {
+        updateEmployeeOptions();
+      }
     } else {
       updateEmployeeOptions();
     }
@@ -1781,6 +2373,8 @@ async function addEmployee(event) {
     departmentSelect.value = departmentId;
     updateEmployeeOptions();
     employeeSelect.value = employee.id;
+    syncDepartmentTabsUI(departmentId);
+    syncEmployeeListUI(employee.id);
     if (guestMode) {
       document.querySelector("#profile-department").value = departmentId;
       updateProfileEmployeeOptions(employee.id);
@@ -1880,6 +2474,13 @@ async function exportCsv() {
 
 function setTab(tabName, refreshData = true) {
   if (guestMode && !["checkup", "profile"].includes(tabName)) return;
+  if (
+    guestMode
+    && tabName === "checkup"
+    && !hasValidGuestProfile()
+  ) {
+    tabName = "profile";
+  }
   if (!isAdmin() && tabName === "profile" && !guestMode) return;
   if (tabName === "summary") {
     document.querySelector("#history-readiness").value = "";
@@ -1957,6 +2558,8 @@ async function initializeApp(user) {
   }
   currentProfile = data;
   await syncAppTimezone();
+  await syncWhatsAppNotificationSetting();
+  await syncEmployeeDisplayLimit();
   resetCheckupResponses();
   todayCheckupCount = null;
   todayReadinessCounts = null;
@@ -2042,7 +2645,9 @@ async function initializeGuestApp() {
     if (!enabled) {
       throw new Error("Mode tamu belum diaktifkan di Supabase. Lihat guest_mode.sql.");
     }
+    await syncWhatsAppNotificationSetting();
     await syncAppTimezone();
+    await syncEmployeeDisplayLimit();
 
     guestEmployeeCreationEnabled = false;
     if (ALLOW_GUEST_EMPLOYEE_CREATION) {
@@ -2105,25 +2710,19 @@ async function initializeGuestApp() {
   appShell.classList.add("guest-mode");
   document.querySelector("#profile-add-employee").disabled =
     !ALLOW_GUEST_EMPLOYEE_CREATION || !guestEmployeeCreationEnabled;
-  document.querySelector("#checkup-whatsapp-wrap").classList.remove("hidden");
-  document.querySelector("#checkup-whatsapp").required = true;
+  document.querySelector("#checkup-whatsapp-wrap").classList.add("hidden");
+  document.querySelector("#checkup-whatsapp").required = false;
+  checkupForm.classList.add("hidden");
+  checkupProgress.classList.add("hidden");
   await loadGuestDirectory();
   guestProfile = readGuestProfile();
-  if (
-    guestProfile
-    && departments.some((department) => department.id === guestProfile.departmentId)
-    && employees.some((employee) =>
-      employee.id === guestProfile.employeeId
-      && employee.department_id === guestProfile.departmentId
-      && employee.is_active
-    )
-    && isValidWhatsApp(guestProfile.whatsapp)
-  ) {
+  if (hasValidGuestProfile()) {
     if (!persistGuestProfile(guestProfile)) {
-      showCheckupForm(1);
+      setTab("profile", false);
       refreshIcons();
       return;
     }
+    setTab("checkup", false);
     syncGuestProfileToCheckup();
     syncGuestProfileForm();
     try {
@@ -2132,19 +2731,17 @@ async function initializeGuestApp() {
         showDailyCheckupStatus(dailyCheckup);
       } else {
         const restored = restoreCheckupDraft(guestProfile.employeeId);
-        showCheckupForm(restored ? activeStep : 2);
+        showCheckupForm(restored ? activeStep : 1);
       }
     } catch (error) {
       console.error("Could not load this device's daily checkup:", error);
       showToast(`Gagal memeriksa status checkup hari ini: ${error.message}`, true);
       const restored = restoreCheckupDraft(guestProfile.employeeId);
-      showCheckupForm(restored ? activeStep : 2);
+      showCheckupForm(restored ? activeStep : 1);
     }
   } else {
-    guestProfile = null;
-    syncGuestProfileForm();
+    setTab("profile", false);
     renderCheckupIdentitySummary();
-    setActiveStep(1);
   }
   refreshIcons();
 }
@@ -2206,6 +2803,7 @@ async function handleSignOut() {
 }
 
 function bindEvents() {
+  applySelectionModes();
   document.querySelector("#login-form").addEventListener("submit", handleLogin);
   document.querySelector("#signout-button").addEventListener("click", handleSignOut);
   document.querySelector("#guest-mode-button").addEventListener("click", async () => {
@@ -2229,7 +2827,7 @@ function bindEvents() {
   });
   document.querySelectorAll("[data-prev]").forEach((button) => {
     button.addEventListener("click", () => {
-      setActiveStep(Math.max(1, activeStep - 1));
+      setActiveStep(Math.max(guestMode ? 2 : 1, activeStep - 1));
       saveCheckupDraft();
     });
   });
@@ -2243,6 +2841,18 @@ function bindEvents() {
   });
   departmentSelect.addEventListener("change", checkSelectedGuestDailyStatus);
   departmentSelect.addEventListener("change", checkAdminSelectedEmployeeDailyStatus);
+  employeeSelect.addEventListener("change", () => {
+    if (EMPLOYEE_SELECTION_MODE !== "dropdown") return;
+    const employee = employees.find((item) => item.id === employeeSelect.value);
+    if (employee && employee.department_id !== departmentSelect.value) {
+      if (currentCheckupTab === "all") {
+        currentCheckupTab = employee.department_id;
+      }
+      departmentSelect.value = employee.department_id;
+      departmentSelect.dispatchEvent(new Event("change"));
+      employeeSelect.value = employee.id;
+    }
+  });
   employeeSelect.addEventListener("change", () => {
     if (guestMode) saveCheckupIdentityIfComplete();
   });
@@ -2269,13 +2879,63 @@ function bindEvents() {
     }
   });
   document.querySelector("#checkup-whatsapp").addEventListener("change", checkSelectedGuestDailyStatus);
+
+  const checkupSearch = document.querySelector("#employee-search");
+  const checkupSearchClear = document.querySelector("#employee-search-clear");
+  if (checkupSearch) {
+    checkupSearch.addEventListener("input", (e) => {
+      checkupSearchQuery = e.target.value.trim().toLowerCase();
+      if (checkupSearchClear) {
+        checkupSearchClear.classList.toggle("hidden", !checkupSearchQuery);
+      }
+      renderEmployeeList(currentCheckupTab);
+    });
+  }
+  if (checkupSearchClear) {
+    checkupSearchClear.addEventListener("click", () => {
+      if (checkupSearch) checkupSearch.value = "";
+      checkupSearchQuery = "";
+      checkupSearchClear.classList.add("hidden");
+      renderEmployeeList(currentCheckupTab);
+      checkupSearch?.focus();
+    });
+  }
+
+  const profileSearch = document.querySelector("#profile-employee-search");
+  const profileSearchClear = document.querySelector("#profile-employee-search-clear");
+  if (profileSearch) {
+    profileSearch.addEventListener("input", (e) => {
+      profileSearchQuery = e.target.value.trim().toLowerCase();
+      if (profileSearchClear) {
+        profileSearchClear.classList.toggle("hidden", !profileSearchQuery);
+      }
+      renderProfileEmployeeList(currentProfileTab);
+    });
+  }
+  if (profileSearchClear) {
+    profileSearchClear.addEventListener("click", () => {
+      if (profileSearch) profileSearch.value = "";
+      profileSearchQuery = "";
+      profileSearchClear.classList.add("hidden");
+      renderProfileEmployeeList(currentProfileTab);
+      profileSearch?.focus();
+    });
+  }
+
   document.querySelector("#profile-department").addEventListener("change", () => {
     updateProfileEmployeeOptions();
   });
   document.querySelector("#profile-employee").addEventListener("change", () => {
-    const employee = employees.find((item) => item.id === document.querySelector("#profile-employee").value);
-    if (employee) {
-      document.querySelector("#profile-department").value = employee.department_id;
+    const profileEmployee = document.querySelector("#profile-employee");
+    const profileDepartment = document.querySelector("#profile-department");
+    const employee = employees.find((item) => item.id === profileEmployee.value);
+    if (employee && employee.department_id !== profileDepartment.value) {
+      if (currentProfileTab === "all") {
+        currentProfileTab = employee.department_id;
+      }
+      profileDepartment.value = employee.department_id;
+      profileDepartment.dispatchEvent(new Event("change"));
+      profileEmployee.value = employee.id;
     }
   });
   document.querySelector("#guest-profile-form").addEventListener("submit", async (event) => {
@@ -2328,7 +2988,7 @@ function bindEvents() {
       updateProfileEmployeeOptions();
       document.querySelector("#profile-whatsapp").value = "";
       setActiveStep(1);
-      setTab("checkup");
+      setTab("profile");
       showToast("Profil perangkat berhasil dihapus.");
     } catch (error) {
       console.error("Could not clear guest profile from this browser:", error);
@@ -2499,6 +3159,7 @@ async function boot() {
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
   });
   await syncAppTimezone();
+  await syncEmployeeDisplayLimit();
 
   client.auth.onAuthStateChange((_event, session) => {
     if (!session) {
