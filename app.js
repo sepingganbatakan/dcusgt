@@ -2035,6 +2035,11 @@ async function submitCheckup(event) {
     return;
   }
 
+  const confirmed = window.confirm(
+    "Pastikan seluruh data DCU sudah benar. DCU hanya dapat diisi satu kali dalam sehari dan tidak dapat diubah setelah dikirim. Apakah Anda yakin ingin menyimpan checkup ini?"
+  );
+  if (!confirmed) return;
+
   const payload = collectCheckup();
   const button = document.querySelector("#submit-checkup");
   setBusy(button, true, "Menyimpan…");
