@@ -396,6 +396,14 @@ button {
   grid-template-columns: repeat(2, 1fr);
 }
 
+.bottom-nav.has-admin-profile {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.bottom-nav.has-admin-settings {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 .nav-item {
   display: flex;
   min-height: 49px;
@@ -646,6 +654,24 @@ button {
   background: #fff;
   padding: 21px;
   box-shadow: 0 20px 60px rgb(15 23 42 / 20%);
+}
+
+#startup-retry-button {
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.privacy-notice-modal {
+  width: min(calc(100% - 28px), 480px);
+}
+
+.privacy-notice-card {
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+}
+
+.privacy-notice-copy {
+  white-space: pre-line;
 }
 
 #employee-modal .modal-card {
@@ -1026,6 +1052,3 @@ button {
 .employee-search-clear:hover {
   color: #334155;
 }
-
-
-

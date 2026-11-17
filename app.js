@@ -23,12 +23,18 @@ const supabaseFactory = window.supabase?.createClient;
 const loginScreen = document.querySelector("#login-screen");
 const appShell = document.querySelector("#app-shell");
 const toastElement = document.querySelector("#toast");
+const startupScreen = document.querySelector("#startup-screen");
+const startupMessage = document.querySelector("#startup-message");
+const startupRetryButton = document.querySelector("#startup-retry-button");
+const privacyNoticeModal = document.querySelector("#privacy-notice-modal");
+const changePasswordModal = document.querySelector("#change-password-modal");
 const departmentSelect = document.querySelector("#department-select");
 const employeeSelect = document.querySelector("#employee-select");
 const checkupForm = document.querySelector("#checkup-form");
 const checkupProgress = document.querySelector("#checkup-progress");
 const resultCard = document.querySelector("#result-card");
 const employeeModal = document.querySelector("#employee-modal");
+const checkupConfirmModal = document.querySelector("#checkup-confirm-modal");
 const exportConfirmModal = document.querySelector("#export-confirm-modal");
 const historyList = document.querySelector("#history-list");
 const offlineQueueBadge = document.querySelector("#offline-queue-badge");
@@ -37,6 +43,7 @@ const syncText = document.querySelector("#sync-text");
 const queueCountBadge = document.querySelector("#queue-count");
 const manualSyncButton = document.querySelector("#manual-sync-button");
 const queueModal = document.querySelector("#queue-modal");
+const adminSettingsFields = document.querySelector("#admin-settings-fields");
 const closeQueueModalBtn = document.querySelector("#close-queue-modal");
 const closeQueueBtn = document.querySelector("#close-queue-btn");
 const triggerSyncBtn = document.querySelector("#trigger-sync-btn");
@@ -47,7 +54,11 @@ const checkupDraftStoragePrefix = "daily-checkup-draft-v1";
 let client;
 let currentUser;
 let currentProfile;
+let adminSettings = [];
+let adminSettingsLoaded = false;
 let currentEmployeeId;
+let currentDepartmentId;
+let privacyGatePassed = false;
 let guestMode = false;
 let guestEmployeeCreationEnabled = false;
 let guestProfile = null;
@@ -67,6 +78,7 @@ let activeTimezone = (typeof APP_TIMEZONE === "string" && APP_TIMEZONE.trim())
   ? APP_TIMEZONE.trim()
   : "Asia/Jakarta";
 let waNotificationsEnabled = false;
+let checkupLocationEnabled = false;
 let employeeDisplayLimit = (typeof DEFAULT_EMPLOYEE_DISPLAY_LIMIT === "number" && DEFAULT_EMPLOYEE_DISPLAY_LIMIT > 0)
   ? DEFAULT_EMPLOYEE_DISPLAY_LIMIT
   : 4;
@@ -108,6 +120,75 @@ async function syncWhatsAppNotificationSetting() {
   } catch (err) {
     console.warn("Could not sync WhatsApp notification setting; keeping the current value:", err);
   }
+}
+
+function applyCheckupLocationSettingUI() {
+  document.querySelector("#checkup-location-notice")
+    ?.classList.toggle("hidden", !checkupLocationEnabled);
+}
+
+async function syncCheckupLocationSetting() {
+  if (!client) return checkupLocationEnabled;
+  try {
+    const { data, error } = await client.rpc("get_checkup_location_enabled");
+    if (error) throw error;
+    if (typeof data !== "boolean") {
+      throw new Error("Supabase returned an invalid checkup location setting.");
+    }
+    checkupLocationEnabled = data;
+  } catch (err) {
+    console.warn("Could not sync checkup location setting; disabling location capture:", err);
+    checkupLocationEnabled = false;
+  }
+  applyCheckupLocationSettingUI();
+  return checkupLocationEnabled;
+}
+
+function getDeviceLocation() {
+  if (!navigator.geolocation) {
+    showToast("Lokasi perangkat tidak tersedia. Checkup tetap akan disimpan tanpa lokasi.", true);
+    return Promise.resolve(null);
+  }
+
+  return new Promise((resolve) => {
+    try {
+      navigator.geolocation.getCurrentPosition(
+        ({ coords, timestamp }) => {
+          if (
+            !Number.isFinite(coords.latitude)
+            || !Number.isFinite(coords.longitude)
+            || !Number.isFinite(coords.accuracy)
+            || coords.accuracy < 0
+          ) {
+            showToast("Koordinat lokasi tidak valid. Checkup tetap akan disimpan tanpa lokasi.", true);
+            resolve(null);
+            return;
+          }
+
+          resolve({
+            location_latitude: coords.latitude,
+            location_longitude: coords.longitude,
+            location_accuracy_m: coords.accuracy,
+            location_captured_at: new Date(Number.isFinite(timestamp) ? timestamp : Date.now()).toISOString()
+          });
+        },
+        (error) => {
+          const reason = error.code === error.PERMISSION_DENIED
+            ? "Izin lokasi ditolak."
+            : error.code === error.POSITION_UNAVAILABLE
+              ? "Lokasi perangkat tidak dapat ditentukan."
+              : "Pengambilan lokasi melewati batas waktu.";
+          showToast(`${reason} Checkup tetap akan disimpan tanpa lokasi.`, true);
+          resolve(null);
+        },
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+      );
+    } catch (error) {
+      console.warn("Could not request device location:", error);
+      showToast("Lokasi perangkat tidak dapat diminta. Checkup tetap akan disimpan tanpa lokasi.", true);
+      resolve(null);
+    }
+  });
 }
 
 function applyEmployeeDisplayLimitUI() {
@@ -154,6 +235,284 @@ function showToast(message, isError = false) {
   toastTimeout = window.setTimeout(() => toastElement.classList.remove("visible"), 3500);
 }
 
+function renderAdminSettings(settings) {
+  adminSettingsFields.replaceChildren();
+  if (settings.length === 0) {
+    const emptyMessage = document.createElement("p");
+    emptyMessage.className = "panel-card text-sm text-slate-500";
+    emptyMessage.textContent = "Belum ada pengaturan yang tersedia. Pastikan migrasi konfigurasi terkait sudah dijalankan.";
+    adminSettingsFields.append(emptyMessage);
+    return;
+  }
+
+  for (const setting of settings) {
+    const card = document.createElement("div");
+    card.className = "panel-card";
+    const inputId = `admin-setting-${setting.key.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+    const input = setting.type === "textarea"
+      ? document.createElement("textarea")
+      : setting.type === "select"
+        ? document.createElement("select")
+        : document.createElement("input");
+    input.id = inputId;
+    input.dataset.settingKey = setting.key;
+    input.className = setting.type === "boolean"
+      ? "toggle-input"
+      : "field-input mt-2";
+
+    if (setting.type === "boolean") {
+      input.type = "checkbox";
+      input.checked = setting.value === true;
+      input.setAttribute("aria-label", setting.label);
+      const row = document.createElement("div");
+      row.className = "flex items-center justify-between gap-3";
+      const label = document.createElement("label");
+      label.className = "field-label";
+      label.htmlFor = inputId;
+      label.textContent = setting.label;
+      row.append(label, input);
+      card.append(row);
+    } else {
+      const label = document.createElement("label");
+      label.className = "field-label";
+      label.htmlFor = inputId;
+      label.textContent = setting.label;
+
+      if (setting.type === "textarea") {
+        input.rows = 4;
+        input.value = typeof setting.value === "string" ? setting.value : "";
+        if (typeof setting.max_length === "number") {
+          input.maxLength = setting.max_length;
+        }
+      } else if (setting.type === "select") {
+        if (!Array.isArray(setting.options)) {
+          throw new Error(`Pilihan untuk pengaturan "${setting.key}" tidak valid.`);
+        }
+        for (const optionValue of setting.options) {
+          const option = document.createElement("option");
+          option.value = String(optionValue);
+          option.textContent = String(optionValue);
+          input.append(option);
+        }
+        input.value = typeof setting.value === "string" ? setting.value : "";
+      } else {
+        input.type = setting.type === "integer"
+          ? "number"
+          : setting.type === "time"
+            ? "time"
+            : "text";
+        input.value = setting.value == null ? "" : String(setting.value);
+        if (setting.type === "integer") {
+          input.step = "1";
+          if (typeof setting.min === "number") input.min = String(setting.min);
+          if (typeof setting.max === "number") input.max = String(setting.max);
+        }
+      }
+      input.required = true;
+      card.append(label, input);
+    }
+
+    adminSettingsFields.append(card);
+  }
+  refreshIcons();
+}
+
+async function loadAdminSettings(forceReload = false) {
+  if (currentProfile?.role !== "admin") {
+    throw new Error("Hanya admin yang dapat mengakses pengaturan aplikasi.");
+  }
+  if (adminSettingsLoaded && !forceReload) return;
+
+  adminSettingsFields.replaceChildren();
+  const loadingMessage = document.createElement("p");
+  loadingMessage.className = "panel-card text-sm text-slate-500";
+  loadingMessage.textContent = "Memuat pengaturan…";
+  adminSettingsFields.append(loadingMessage);
+
+  const { data, error } = await client.rpc("get_admin_editable_settings");
+  if (error) {
+    adminSettingsLoaded = false;
+    adminSettingsFields.textContent = `Pengaturan gagal dimuat: ${error.message}`;
+    throw error;
+  }
+  if (!Array.isArray(data)) {
+    adminSettingsLoaded = false;
+    throw new Error("Supabase mengembalikan daftar pengaturan dengan format yang tidak valid.");
+  }
+  adminSettings = data;
+  adminSettingsLoaded = true;
+  renderAdminSettings(adminSettings);
+}
+
+async function handleAdminSettingsSave(event) {
+  event.preventDefault();
+  if (currentProfile?.role !== "admin") {
+    showToast("Hanya admin yang dapat mengubah pengaturan aplikasi.", true);
+    return;
+  }
+
+  const button = document.querySelector("#save-admin-settings");
+  const values = Object.create(null);
+  for (const input of adminSettingsFields.querySelectorAll("[data-setting-key]")) {
+    values[input.dataset.settingKey] = input.type === "checkbox"
+      ? input.checked
+      : input.type === "number"
+        ? Number(input.value)
+        : input.value;
+  }
+
+  setBusy(button, true, "Menyimpan…");
+  try {
+    const { error } = await client.rpc("update_admin_editable_settings", { p_values: values });
+    if (error) throw error;
+
+    adminSettings = adminSettings.map((setting) => ({
+      ...setting,
+      value: values[setting.key]
+    }));
+    showToast("Pengaturan berhasil disimpan.");
+
+    try {
+      if (Object.hasOwn(values, "app_timezone")) {
+        await syncAppTimezone();
+        document.querySelector("#today-label").textContent = new Intl.DateTimeFormat("id-ID", {
+          timeZone: getActiveTimezone(),
+          weekday: "long", day: "numeric", month: "long", year: "numeric"
+        }).format(new Date());
+        await loadCheckups();
+      }
+      if (Object.hasOwn(values, "wa_notifications_enabled")) {
+        await syncWhatsAppNotificationSetting();
+      }
+      if (Object.hasOwn(values, "checkup_location_enabled")) {
+        await syncCheckupLocationSetting();
+      }
+    } catch (error) {
+      console.error("Saved settings but runtime refresh failed:", error);
+      showToast(`Pengaturan tersimpan, tetapi tampilan gagal diperbarui: ${error.message}`, true);
+    }
+  } catch (error) {
+    console.error("Admin settings save failed:", error);
+    showToast(`Gagal menyimpan pengaturan: ${error.message}`, true);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+function openChangePasswordModal() {
+  document.querySelector("#change-password-form").reset();
+  changePasswordModal.showModal();
+  refreshIcons();
+}
+
+async function handlePasswordChange(event) {
+  event.preventDefault();
+  const passwordInput = document.querySelector("#new-account-password");
+  const confirmationInput = document.querySelector("#confirm-account-password");
+  if (passwordInput.value !== confirmationInput.value) {
+    showToast("Konfirmasi password tidak sama.", true);
+    confirmationInput.focus();
+    return;
+  }
+
+  const button = document.querySelector("#save-account-password");
+  setBusy(button, true, "Menyimpan…");
+  try {
+    const { error } = await client.auth.updateUser({ password: passwordInput.value });
+    if (error) throw error;
+    changePasswordModal.close();
+    document.querySelector("#change-password-form").reset();
+    showToast("Password berhasil diubah.");
+  } catch (error) {
+    console.error("Password update failed:", error);
+    showToast(`Gagal mengubah password: ${error.message}`, true);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+function showPrivacyNoticeError(error) {
+  console.error("Could not load mandatory privacy notice settings:", error);
+  startupMessage.textContent = `Informasi penggunaan aplikasi tidak dapat dimuat. Aplikasi belum dapat digunakan. Periksa koneksi atau konfigurasi Supabase, lalu coba lagi. (${error.message})`;
+  startupMessage.setAttribute("role", "alert");
+  startupRetryButton.classList.remove("hidden");
+}
+
+function completePrivacyNotice() {
+  privacyGatePassed = true;
+  privacyNoticeModal.close();
+  startupScreen.classList.add("hidden");
+}
+
+async function requestPrivacyNotice() {
+  const { data, error } = await client.rpc("get_dcu_notice_settings");
+  if (error) throw error;
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw new Error("Supabase returned invalid DCU notice settings.");
+  }
+
+  const requiredTextFields = ["legal_basis", "dcu_summary", "privacy_message", "consent_statement"];
+  for (const field of requiredTextFields) {
+    if (typeof data[field] !== "string" || !data[field].trim()) {
+      throw new Error(`Supabase returned an invalid ${field} notice setting.`);
+    }
+  }
+  if (typeof data.legal_basis_enabled !== "boolean" || typeof data.dcu_summary_enabled !== "boolean") {
+    throw new Error("Supabase returned invalid DCU notice visibility settings.");
+  }
+  if (!["consent_required", "notice_acknowledgement", "disabled"].includes(data.mode)) {
+    throw new Error("Supabase returned an unsupported DCU notice mode.");
+  }
+
+  if (data.mode === "disabled") {
+    completePrivacyNotice();
+    return;
+  }
+
+  const summaryWrap = document.querySelector("#privacy-notice-summary-wrap");
+  const legalWrap = document.querySelector("#privacy-notice-legal-wrap");
+  const consentForm = document.querySelector("#privacy-notice-consent-form");
+  const acknowledgeWrap = document.querySelector("#privacy-notice-acknowledge-wrap");
+  const consentCheckbox = document.querySelector("#privacy-notice-consent-checkbox");
+
+  document.querySelector("#privacy-notice-summary").textContent = data.dcu_summary;
+  document.querySelector("#privacy-notice-legal").textContent = data.legal_basis;
+  document.querySelector("#privacy-notice-privacy").textContent = data.privacy_message;
+  document.querySelector("#privacy-notice-consent-statement").textContent = data.consent_statement;
+  consentCheckbox.checked = false;
+  document.querySelector("#privacy-notice-agree-button").disabled = true;
+  summaryWrap.classList.toggle("hidden", !data.dcu_summary_enabled);
+  legalWrap.classList.toggle("hidden", !data.legal_basis_enabled);
+  consentForm.classList.toggle("hidden", data.mode !== "consent_required");
+  acknowledgeWrap.classList.toggle("hidden", data.mode !== "notice_acknowledgement");
+  document.querySelector("#privacy-notice-blocked-message").classList.add("hidden");
+  document.querySelector("#privacy-notice-title").textContent = "Informasi Penggunaan Data";
+
+  privacyNoticeModal.showModal();
+}
+
+function bindPrivacyNoticeEvents() {
+  const consentCheckbox = document.querySelector("#privacy-notice-consent-checkbox");
+  const consentForm = document.querySelector("#privacy-notice-consent-form");
+  const blockedMessage = document.querySelector("#privacy-notice-blocked-message");
+
+  consentCheckbox.addEventListener("change", () => {
+    document.querySelector("#privacy-notice-agree-button").disabled = !consentCheckbox.checked;
+  });
+  consentForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (!consentCheckbox.checked) return;
+    completePrivacyNotice();
+  });
+  document.querySelector("#privacy-notice-decline-button").addEventListener("click", () => {
+    blockedMessage.textContent = "Tanpa persetujuan, Anda tidak dapat melanjutkan penggunaan aplikasi. Anda dapat menutup halaman ini.";
+    blockedMessage.classList.remove("hidden");
+  });
+  document.querySelector("#privacy-notice-acknowledge-button").addEventListener("click", completePrivacyNotice);
+  privacyNoticeModal.addEventListener("cancel", (event) => event.preventDefault());
+  startupRetryButton.addEventListener("click", () => window.location.reload());
+}
+
 function escapeHtml(value = "") {
   return String(value).replace(/[&<>"']/g, (character) => ({
     "&": "&amp;",
@@ -170,6 +529,18 @@ function refreshIcons() {
 
 function isAdmin() {
   return ["admin", "hr"].includes(currentProfile?.role);
+}
+
+function isDepartmentRepresentative() {
+  return currentProfile?.role === "department_rep";
+}
+
+function isSummaryViewer() {
+  return isAdmin() || isDepartmentRepresentative();
+}
+
+function isEmployeeAccount() {
+  return ["employee", "department_rep"].includes(currentProfile?.role);
 }
 
 function normalizeWhatsApp(value) {
@@ -267,10 +638,22 @@ function resetCheckupResponses() {
   document.querySelector("#diastolic").value = "";
   document.querySelector("#temperature").value = "36.5";
   document.querySelector("#notes").value = "";
-  checkupForm.querySelectorAll('input[name="fatigue_level"], input[name="sleep_quality"], input[name="symptoms"]')
+  checkupForm.querySelectorAll('input[name="fatigue_level"], input[name="sleep_quality"], input[name="symptoms"], input[name="has_complaint_today"]')
     .forEach((input) => { input.checked = false; });
+  updateComplaintSymptomsVisibility();
   updateTemperatureDisplay();
   setActiveStep(1);
+}
+
+function updateComplaintSymptomsVisibility() {
+  const hasComplaint = document.querySelector("#has-complaint-today").checked;
+  document.querySelector("#complaint-status").textContent = hasComplaint ? "Ya, ada keluhan" : "Tidak";
+  document.querySelector("#complaint-symptoms").classList.toggle("hidden", !hasComplaint);
+  if (!hasComplaint) {
+    checkupForm.querySelectorAll('#complaint-symptoms input[name="symptoms"]').forEach((input) => {
+      input.checked = false;
+    });
+  }
 }
 
 function persistCheckupSelection() {
@@ -326,6 +709,7 @@ function saveCheckupDraft() {
     temperature: document.querySelector("#temperature").value,
     fatigueLevel: checkupForm.querySelector('input[name="fatigue_level"]:checked')?.value ?? "",
     sleepQuality: checkupForm.querySelector('input[name="sleep_quality"]:checked')?.value ?? "",
+    hasComplaintToday: document.querySelector("#has-complaint-today").checked ? "yes" : "no",
     symptoms,
     notes: document.querySelector("#notes").value,
     step: activeStep
@@ -340,7 +724,7 @@ function saveCheckupDraft() {
 
 function isCheckupDraftField(target) {
   return ["systolic", "diastolic", "temperature", "notes"].includes(target?.id)
-    || ["fatigue_level", "sleep_quality", "symptoms"].includes(target?.name);
+    || ["fatigue_level", "sleep_quality", "symptoms", "has_complaint_today"].includes(target?.name);
 }
 
 function restoreCheckupDraft(employeeId) {
@@ -382,6 +766,8 @@ function restoreCheckupDraft(employeeId) {
   checkupForm.querySelectorAll('input[name="symptoms"]').forEach((input) => {
     input.checked = Boolean(draft.symptoms?.[input.value]);
   });
+  document.querySelector("#has-complaint-today").checked = draft.hasComplaintToday === "yes";
+  updateComplaintSymptomsVisibility();
   document.querySelector("#notes").value = typeof draft.notes === "string" ? draft.notes : "";
   updateTemperatureDisplay();
   setActiveStep(Number.isInteger(draft.step) && draft.step >= 1 && draft.step <= 3 ? draft.step : 2);
@@ -601,10 +987,11 @@ function showDailyCheckupStatus(checkup) {
   showResult(checkup, checkup.readiness_status, checkup.checked_at, Boolean(checkup?.is_offline));
   resultCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
 
-  // Add "Pilih karyawan lain" button for all users (guest, employee, admin)
+  // Department representatives must keep their linked checkup identity.
   const existingBtn = document.querySelector('.admin-employee-switch-btn');
   if (existingBtn) existingBtn.remove();
-  
+  if (isDepartmentRepresentative()) return;
+
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'secondary-button mt-4 w-full admin-employee-switch-btn';
@@ -1370,7 +1757,7 @@ function updateEmployeeOptions() {
       : employee.full_name;
     employeeSelect.append(option);
   }
-  employeeSelect.disabled = false;
+  employeeSelect.disabled = isDepartmentRepresentative();
   if (!departmentId && !showAllEmployees) {
     employeeSelect.innerHTML = '<option value="">Pilih departemen terlebih dahulu</option>';
   } else if (departmentEmployees.length === 0) {
@@ -1448,8 +1835,13 @@ async function loadDepartments() {
   }
 
   const historyDepartment = document.querySelector("#history-department");
-  historyDepartment.innerHTML = '<option value="">Semua departemen</option>' + options;
-  if (departments.some((department) => department.id === selectedHistoryDepartment)) {
+  historyDepartment.innerHTML = isDepartmentRepresentative()
+    ? options
+    : '<option value="">Semua departemen</option>' + options;
+  historyDepartment.disabled = isDepartmentRepresentative();
+  if (isDepartmentRepresentative() && departments.some((department) => department.id === currentDepartmentId)) {
+    historyDepartment.value = currentDepartmentId;
+  } else if (departments.some((department) => department.id === selectedHistoryDepartment)) {
     historyDepartment.value = selectedHistoryDepartment;
   }
 
@@ -1610,7 +2002,11 @@ async function syncOfflineQueue(showToastNotice = false) {
           p_fatigue_level: item.payload.fatigue_level,
           p_sleep_quality: item.payload.sleep_quality,
           p_symptoms: item.payload.symptoms,
-          p_notes: item.payload.notes
+          p_notes: item.payload.notes,
+          p_location_latitude: item.payload.location_latitude ?? null,
+          p_location_longitude: item.payload.location_longitude ?? null,
+          p_location_accuracy_m: item.payload.location_accuracy_m ?? null,
+          p_location_captured_at: item.payload.location_captured_at ?? null
         });
         if (error) throw error;
         savedCheckup = Array.isArray(data) ? data[0] : data;
@@ -1664,7 +2060,7 @@ async function syncOfflineQueue(showToastNotice = false) {
     try {
       const dailyCheckup = guestMode
         ? await loadGuestDailyStatus()
-        : currentProfile?.role === "employee"
+        : isEmployeeAccount()
           ? await loadAuthenticatedDailyCheckup(currentEmployeeId)
           : null;
       if (dailyCheckup) showDailyCheckupStatus(dailyCheckup);
@@ -1768,12 +2164,30 @@ async function loadEmployees() {
     departmentSelect.value = ownEmployee.department_id;
     updateEmployeeOptions();
     employeeSelect.value = ownEmployee.id;
-    departmentSelect.disabled = false;
-    employeeSelect.disabled = false;
+    departmentSelect.disabled = isDepartmentRepresentative();
+    employeeSelect.disabled = isDepartmentRepresentative();
     syncEmployeeListUI(ownEmployee.id);
+    if (isDepartmentRepresentative()) {
+      document.querySelector("#checkup-identity-controls").classList.add("hidden");
+      document.querySelector("#checkup-identity-name").textContent = ownEmployee.full_name;
+      document.querySelector("#checkup-identity-department").textContent =
+        departments.find((department) => department.id === ownEmployee.department_id)?.name ?? "—";
+      document.querySelector("#checkup-identity-summary").classList.remove("hidden");
+      document.querySelector("#checkup-identity-summary").classList.add("flex");
+      document.querySelector("#edit-checkup-identity").classList.add("hidden");
+    } else {
+      document.querySelector("#checkup-identity-controls").classList.remove("hidden");
+      document.querySelector("#checkup-identity-summary").classList.add("hidden");
+      document.querySelector("#checkup-identity-summary").classList.remove("flex");
+      document.querySelector("#edit-checkup-identity").classList.remove("hidden");
+    }
   } else if (isAdmin()) {
-    departmentSelect.disabled = false;
-    employeeSelect.disabled = false;
+    document.querySelector("#checkup-identity-controls").classList.remove("hidden");
+    document.querySelector("#checkup-identity-summary").classList.add("hidden");
+    document.querySelector("#checkup-identity-summary").classList.remove("flex");
+    document.querySelector("#edit-checkup-identity").classList.remove("hidden");
+    departmentSelect.disabled = isDepartmentRepresentative();
+    employeeSelect.disabled = isDepartmentRepresentative();
     if (employees.some((employee) => employee.id === selectedEmployee && employee.department_id === departmentSelect.value)) {
       employeeSelect.value = selectedEmployee;
       syncEmployeeListUI(selectedEmployee);
@@ -1787,7 +2201,9 @@ function getHistoryFilters() {
   return {
     from: document.querySelector("#filter-from").value,
     to: document.querySelector("#filter-to").value,
-    departmentId: document.querySelector("#history-department").value,
+    departmentId: isDepartmentRepresentative()
+      ? currentDepartmentId
+      : document.querySelector("#history-department").value,
     readinessStatus: document.querySelector("#history-readiness").value
   };
 }
@@ -1796,7 +2212,7 @@ async function loadCheckups() {
   historyList.innerHTML = '<div class="empty-state">Memuat riwayat…</div>';
   let query = client
     .from("checkups")
-    .select("id, employee_id, checked_at, systolic, diastolic, temperature_c, fatigue_level, sleep_quality, symptoms, notes, readiness_status, employees!inner(full_name, department_id, departments(name))")
+    .select("id, employee_id, checked_at, systolic, diastolic, temperature_c, fatigue_level, sleep_quality, symptoms, notes, readiness_status, location_latitude, location_longitude, location_accuracy_m, location_captured_at, employees!inner(full_name, department_id, departments(name))")
     .order("checked_at", { ascending: false })
     .limit(1000);
 
@@ -1822,30 +2238,40 @@ async function loadCheckups() {
     throw error;
   }
   checkups = data ?? [];
-  if (isAdmin()) await loadDailyCoverage();
+  if (isSummaryViewer()) await loadDailyCoverage();
   renderHistory();
   renderSummary();
 }
 
 async function loadDailyCoverage() {
   const { start, end } = getDateRange();
+  const departmentId = isDepartmentRepresentative() ? currentDepartmentId : null;
+  const checkupSelect = departmentId ? "id, employees!inner(department_id)" : "id";
+  let checkupQuery = client
+    .from("checkups")
+    .select(checkupSelect, { count: "exact", head: true })
+    .gte("checked_at", start)
+    .lt("checked_at", end);
+  let employeeQuery = client
+    .from("employees")
+    .select("id", { count: "exact", head: true })
+    .eq("is_active", true);
+  if (departmentId) {
+    checkupQuery = checkupQuery.eq("employees.department_id", departmentId);
+    employeeQuery = employeeQuery.eq("department_id", departmentId);
+  }
   const [checkupResult, employeeResult, readinessCountEntries] = await Promise.all([
-    client
-      .from("checkups")
-      .select("id", { count: "exact", head: true })
-      .gte("checked_at", start)
-      .lt("checked_at", end),
-    client
-      .from("employees")
-      .select("id", { count: "exact", head: true })
-      .eq("is_active", true),
+    checkupQuery,
+    employeeQuery,
     Promise.all(Object.keys(statusDetails).map(async (status) => {
-      const result = await client
+      let query = client
         .from("checkups")
-        .select("id", { count: "exact", head: true })
+        .select(departmentId ? "id, employees!inner(department_id)" : "id", { count: "exact", head: true })
         .gte("checked_at", start)
         .lt("checked_at", end)
         .eq("readiness_status", status);
+      if (departmentId) query = query.eq("employees.department_id", departmentId);
+      const result = await query;
       if (result.error) throw result.error;
       return [status, result.count ?? 0];
     }))
@@ -1870,6 +2296,14 @@ function renderHistory() {
     const symptoms = Object.entries(checkup.symptoms ?? {})
       .filter(([, selected]) => selected)
       .map(([key]) => symptomLabels[key] ?? key);
+    const locationDetails = checkup.location_latitude !== null
+      && checkup.location_latitude !== undefined
+      && checkup.location_longitude !== null
+      && checkup.location_longitude !== undefined
+      && Number.isFinite(Number(checkup.location_latitude))
+      && Number.isFinite(Number(checkup.location_longitude))
+      ? `<p class="mt-2 text-xs text-slate-500"><b class="text-slate-600">Lokasi:</b> ${Number(checkup.location_latitude).toFixed(6)}, ${Number(checkup.location_longitude).toFixed(6)} · akurasi ±${Number(checkup.location_accuracy_m).toFixed(1)} m${checkup.location_captured_at ? ` · ${escapeHtml(formatDate(checkup.location_captured_at))}` : ""}</p>`
+      : "";
     return `<article class="history-card">
       <div class="flex items-start justify-between gap-2">
         <div class="min-w-0">
@@ -1885,13 +2319,21 @@ function renderHistory() {
       </div>
       ${symptoms.length ? `<p class="mt-3 text-xs leading-5 text-slate-500"><b class="text-slate-600">Gejala:</b> ${escapeHtml(symptoms.join(", "))}</p>` : ""}
       ${checkup.notes ? `<p class="mt-2 whitespace-pre-wrap break-words text-xs leading-5 text-slate-500">${escapeHtml(checkup.notes)}</p>` : ""}
+      ${locationDetails}
     </article>`;
   }).join("");
   refreshIcons();
 }
 
 function renderSummary() {
-  const counts = isAdmin() && todayReadinessCounts
+  const departmentLabel = document.querySelector("#stat-active-department");
+  const departmentName = departments.find((department) => department.id === currentDepartmentId)?.name;
+  departmentLabel.textContent = isDepartmentRepresentative() && departmentName
+    ? ` — ${departmentName}`
+    : "";
+  departmentLabel.classList.toggle("hidden", !isDepartmentRepresentative() || !departmentName);
+
+  const counts = isSummaryViewer() && todayReadinessCounts
     ? {
         fit: todayReadinessCounts.fit_to_work,
         observe: todayReadinessCounts.need_observation,
@@ -1902,7 +2344,7 @@ function renderSummary() {
         observe: checkups.filter((item) => item.readiness_status === "need_observation").length,
         rest: checkups.filter((item) => item.readiness_status === "rest_recommended").length
       };
-  if (isAdmin() && todayCheckupCount !== null && activeEmployeeCount !== null) {
+  if (isSummaryViewer() && todayCheckupCount !== null && activeEmployeeCount !== null) {
     const coverage = activeEmployeeCount
       ? Math.min(100, Math.round((todayCheckupCount / activeEmployeeCount) * 100))
       : 0;
@@ -1922,7 +2364,7 @@ function collectCheckup() {
     [...checkupForm.querySelectorAll('input[name="symptoms"]')].map((input) => [input.value, input.checked])
   );
   return {
-    employee_id: employeeSelect.value,
+    employee_id: isDepartmentRepresentative() ? currentEmployeeId : employeeSelect.value,
     systolic: Number(document.querySelector("#systolic").value),
     diastolic: Number(document.querySelector("#diastolic").value),
     temperature_c: Number(document.querySelector("#temperature").value),
@@ -2030,19 +2472,33 @@ async function dispatchWhatsAppNotification(checkupId, employeePhone) {
 
 async function submitCheckup(event) {
   event.preventDefault();
+  if (checkupConfirmModal.open) return;
   if (!validateStep(1) || !validateStep(2)) {
     setActiveStep(activeStep === 1 ? 1 : 2);
     return;
   }
 
-  const confirmed = window.confirm(
-    "Pastikan seluruh data DCU sudah benar. DCU hanya dapat diisi satu kali dalam sehari dan tidak dapat diubah setelah dikirim. Apakah Anda yakin ingin menyimpan checkup ini?"
-  );
+  if (navigator.onLine) await syncCheckupLocationSetting();
+  document.querySelector("#checkup-location-confirmation")
+    ?.classList.toggle("hidden", !checkupLocationEnabled);
+  checkupConfirmModal.returnValue = "";
+  const confirmation = new Promise((resolve) => {
+    checkupConfirmModal.addEventListener("close", () => {
+      resolve(checkupConfirmModal.returnValue === "confirm");
+    }, { once: true });
+  });
+  checkupConfirmModal.showModal();
+  refreshIcons();
+  const confirmed = await confirmation;
   if (!confirmed) return;
 
   const payload = collectCheckup();
   const button = document.querySelector("#submit-checkup");
   setBusy(button, true, "Menyimpan…");
+
+  if (checkupLocationEnabled) {
+    Object.assign(payload, await getDeviceLocation() ?? {});
+  }
 
   const isOffline = !navigator.onLine;
 
@@ -2068,8 +2524,8 @@ async function submitCheckup(event) {
     showResult(payload, preliminaryStatus, measuredAt, true);
 
     checkupForm.reset();
-    departmentSelect.disabled = false;
-    employeeSelect.disabled = false;
+    departmentSelect.disabled = isDepartmentRepresentative();
+    employeeSelect.disabled = isDepartmentRepresentative();
     if (!guestMode && currentEmployeeId) {
       const ownEmployee = employees.find((employee) => employee.id === currentEmployeeId);
       if (ownEmployee) {
@@ -2093,7 +2549,7 @@ async function submitCheckup(event) {
         readiness_status: preliminaryStatus,
         is_offline: true
       });
-    } else if (currentProfile?.role === "employee") {
+    } else if (isEmployeeAccount()) {
       showDailyCheckupStatus({
         ...payload,
         checked_at: measuredAt,
@@ -2102,7 +2558,7 @@ async function submitCheckup(event) {
       });
     }
     updateTemperatureDisplay();
-    if (!guestMode && currentProfile?.role !== "employee") setActiveStep(1);
+    if (!guestMode && !isEmployeeAccount()) setActiveStep(1);
     await updateNetworkAndQueueUI();
     showToast("DCU disimpan di antrean offline. Otomatis dikirim saat online.");
   };
@@ -2131,7 +2587,11 @@ async function submitCheckup(event) {
         p_fatigue_level: payload.fatigue_level,
         p_sleep_quality: payload.sleep_quality,
         p_symptoms: payload.symptoms,
-        p_notes: payload.notes
+        p_notes: payload.notes,
+        p_location_latitude: payload.location_latitude ?? null,
+        p_location_longitude: payload.location_longitude ?? null,
+        p_location_accuracy_m: payload.location_accuracy_m ?? null,
+        p_location_captured_at: payload.location_captured_at ?? null
       });
       if (error) throw error;
       savedCheckup = Array.isArray(data) ? data[0] : data;
@@ -2149,7 +2609,7 @@ async function submitCheckup(event) {
     }
     let canSubmitMore = false;
     let submissionStatusError = null;
-    if (guestMode || currentProfile?.role === "employee") {
+    if (guestMode || isEmployeeAccount()) {
       const { data, error } = await client.rpc("can_submit_additional_dcu", {
         p_employee_id: payload.employee_id,
         p_device_token: guestMode ? guestProfile.deviceToken : null
@@ -2172,8 +2632,8 @@ async function submitCheckup(event) {
       dispatchWhatsAppNotification(checkupId, employeePhone);
     }
     checkupForm.reset();
-    departmentSelect.disabled = false;
-    employeeSelect.disabled = false;
+    departmentSelect.disabled = isDepartmentRepresentative();
+    employeeSelect.disabled = isDepartmentRepresentative();
     if (!guestMode && currentEmployeeId) {
       const ownEmployee = employees.find((employee) => employee.id === currentEmployeeId);
       if (ownEmployee) {
@@ -2196,7 +2656,7 @@ async function submitCheckup(event) {
         readiness_status: savedCheckup.readiness_status,
         can_submit_more: canSubmitMore
       });
-    } else if (currentProfile?.role === "employee") {
+    } else if (isEmployeeAccount()) {
       showDailyCheckupStatus({
         ...payload,
         checked_at: savedCheckup.checked_at,
@@ -2205,7 +2665,7 @@ async function submitCheckup(event) {
       });
     }
     updateTemperatureDisplay();
-    if (!guestMode && currentProfile?.role !== "employee") setActiveStep(1);
+    if (!guestMode && !isEmployeeAccount()) setActiveStep(1);
     showToast(submissionStatusError
       ? `Checkup berhasil disimpan, tetapi status batas pengisian berikutnya gagal diperiksa: ${submissionStatusError.message}`
       : "Checkup berhasil disimpan.", Boolean(submissionStatusError));
@@ -2239,7 +2699,7 @@ async function submitCheckup(event) {
         try {
           const dailyCheckup = guestMode
             ? await loadGuestDailyStatus()
-            : currentProfile?.role === "employee"
+            : isEmployeeAccount()
               ? await loadAuthenticatedDailyCheckup(payload.employee_id)
               : null;
           if (dailyCheckup) showDailyCheckupStatus(dailyCheckup);
@@ -2420,7 +2880,8 @@ function triggerCsvDownload(items) {
   if (!items?.length) return false;
   const header = [
     "Waktu checkup", "Nama karyawan", "Departemen", "Tekanan sistolik", "Tekanan diastolik",
-    "Suhu (C)", "Kelelahan (1-5)", "Kualitas tidur (1-5)", "Gejala", "Catatan", "Status"
+    "Suhu (C)", "Kelelahan (1-5)", "Kualitas tidur (1-5)", "Gejala", "Catatan", "Status",
+    "Latitude", "Longitude", "Akurasi lokasi (m)", "Waktu pengambilan lokasi"
   ];
   const rows = items.map((item) => [
     item.checked_at,
@@ -2433,7 +2894,11 @@ function triggerCsvDownload(items) {
     item.sleep_quality,
     Object.entries(item.symptoms ?? {}).filter(([, selected]) => selected).map(([key]) => symptomLabels[key] ?? key).join("; "),
     item.notes,
-    statusDetails[item.readiness_status]?.label ?? item.readiness_status
+    statusDetails[item.readiness_status]?.label ?? item.readiness_status,
+    item.location_latitude,
+    item.location_longitude,
+    item.location_accuracy_m,
+    item.location_captured_at
   ]);
   const csv = "\uFEFF" + [header, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n");
   const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
@@ -2487,6 +2952,7 @@ function setTab(tabName, refreshData = true) {
     tabName = "profile";
   }
   if (!isAdmin() && tabName === "profile" && !guestMode) return;
+  if (tabName === "settings" && currentProfile?.role !== "admin") return;
   if (tabName === "summary") {
     document.querySelector("#history-readiness").value = "";
   }
@@ -2497,6 +2963,12 @@ function setTab(tabName, refreshData = true) {
     button.classList.toggle("active", button.dataset.tabTarget === tabName);
   });
   if (guestMode && tabName === "profile") syncGuestProfileForm();
+  if (tabName === "settings") {
+    loadAdminSettings().catch((error) => {
+      console.error("Admin settings load failed:", error);
+      showToast(`Gagal memuat pengaturan: ${error.message}`, true);
+    });
+  }
   if (refreshData && (tabName === "history" || tabName === "summary")) {
     loadCheckups().catch((error) => {
       console.error("Checkup history load failed:", error);
@@ -2514,7 +2986,7 @@ function openSummaryFilter(filter) {
 
   fromInput.value = today;
   toInput.value = today;
-  departmentInput.value = "";
+  departmentInput.value = isDepartmentRepresentative() ? currentDepartmentId : "";
   if (filter === "today") {
     readinessInput.value = "";
   } else {
@@ -2539,6 +3011,9 @@ async function initializeApp(user) {
   resultCard.replaceChildren();
   resultCard.classList.add("hidden");
   currentUser = user;
+  adminSettings = [];
+  adminSettingsLoaded = false;
+  document.querySelector("#change-password-button").classList.remove("hidden");
   const signoutButton = document.querySelector("#signout-button");
   signoutButton.innerHTML = '<i data-lucide="log-out"></i>';
   signoutButton.setAttribute("aria-label", "Keluar");
@@ -2546,7 +3021,6 @@ async function initializeApp(user) {
   signoutButton.classList.remove("hidden");
   refreshIcons();
   document.querySelectorAll("[data-tab-target]").forEach((button) => button.classList.remove("hidden"));
-  if (!isAdmin()) document.querySelector('[data-tab-target="profile"]').classList.add("hidden");
   appShell.classList.remove("guest-mode");
   document.querySelector("#checkup-whatsapp-wrap").classList.add("hidden");
   document.querySelector("#checkup-whatsapp").required = false;
@@ -2562,20 +3036,34 @@ async function initializeApp(user) {
     throw new Error("Akun belum memiliki profil akses. Hubungi administrator.");
   }
   currentProfile = data;
+  document.querySelector('[data-tab-target="profile"]').classList.toggle("hidden", !isAdmin());
+  document.querySelector('[data-tab-target="settings"]').classList.toggle("hidden", currentProfile.role !== "admin");
+  document.querySelector(".bottom-nav").classList.toggle("has-admin-profile", isAdmin());
+  document.querySelector(".bottom-nav").classList.toggle("has-admin-settings", currentProfile.role === "admin");
   await syncAppTimezone();
   await syncWhatsAppNotificationSetting();
+  await syncCheckupLocationSetting();
   await syncEmployeeDisplayLimit();
   resetCheckupResponses();
   todayCheckupCount = null;
   todayReadinessCounts = null;
   activeEmployeeCount = null;
   currentEmployeeId = null;
-  if (currentProfile.role === "employee") {
+  currentDepartmentId = null;
+  if (isEmployeeAccount()) {
     const employeeResult = await client.rpc("current_employee_id");
     if (employeeResult.error) throw employeeResult.error;
     currentEmployeeId = employeeResult.data;
     if (!currentEmployeeId) {
       throw new Error("Akun belum ditautkan ke data karyawan. Hubungi administrator.");
+    }
+  }
+  if (isDepartmentRepresentative()) {
+    const departmentResult = await client.rpc("current_department_id");
+    if (departmentResult.error) throw departmentResult.error;
+    currentDepartmentId = departmentResult.data;
+    if (!currentDepartmentId) {
+      throw new Error("Akun perwakilan belum ditautkan ke departemen. Hubungi administrator.");
     }
   }
   loginScreen.classList.add("hidden");
@@ -2585,14 +3073,14 @@ async function initializeApp(user) {
     timeZone: getActiveTimezone(),
     weekday: "long", day: "numeric", month: "long", year: "numeric"
   }).format(new Date());
-  document.querySelector("#history-department-wrap").classList.toggle("hidden", !isAdmin());
-  document.querySelector("#daily-coverage-card").classList.toggle("hidden", !isAdmin());
+  document.querySelector("#history-department-wrap").classList.toggle("hidden", !isAdmin() && !isDepartmentRepresentative());
+  document.querySelector("#daily-coverage-card").classList.toggle("hidden", !isSummaryViewer());
 
   await loadDepartments();
   await loadEmployees();
   if (isAdmin()) restoreCheckupSelection();
   await loadCheckups();
-  if (currentProfile.role === "employee") {
+  if (isEmployeeAccount()) {
     const dailyCheckup = await loadAuthenticatedDailyCheckup(currentEmployeeId);
     if (dailyCheckup) {
       showDailyCheckupStatus(dailyCheckup);
@@ -2607,7 +3095,7 @@ async function initializeApp(user) {
     checkupProgress.classList.remove("hidden");
     resultCard.classList.add("hidden");
   }
-  setTab(isAdmin() ? "summary" : "checkup", false);
+  setTab(isSummaryViewer() ? "summary" : "checkup", false);
   if (realtimeChannel) await client.removeChannel(realtimeChannel);
   realtimeChannel = client
     .channel("checkup-changes")
@@ -2625,7 +3113,7 @@ async function initializeApp(user) {
     })
     .on("postgres_changes", { event: "*", schema: "public", table: "employees" }, () => {
       loadEmployees().then(async () => {
-        if (isAdmin()) {
+        if (isSummaryViewer()) {
           await loadDailyCoverage();
           renderSummary();
         }
@@ -2652,6 +3140,7 @@ async function initializeGuestApp() {
     }
     await syncWhatsAppNotificationSetting();
     await syncAppTimezone();
+    await syncCheckupLocationSetting();
     await syncEmployeeDisplayLimit();
 
     guestEmployeeCreationEnabled = false;
@@ -2674,7 +3163,10 @@ async function initializeGuestApp() {
   document.querySelector("#daily-checkup-completed-notice").classList.add("hidden");
   currentUser = null;
   currentProfile = null;
+  adminSettings = [];
+  adminSettingsLoaded = false;
   currentEmployeeId = null;
+  currentDepartmentId = null;
   resetCheckupResponses();
   todayCheckupCount = null;
   todayReadinessCounts = null;
@@ -2691,8 +3183,14 @@ async function initializeGuestApp() {
   document.querySelector("#stat-rest").textContent = "—";
   resultCard.replaceChildren();
   resultCard.classList.add("hidden");
+  document.querySelector("#change-password-button").classList.add("hidden");
   checkupForm.classList.remove("hidden");
   checkupProgress.classList.remove("hidden");
+  document.querySelector("#checkup-identity-controls").classList.remove("hidden");
+  document.querySelector("#checkup-identity-summary").classList.add("hidden");
+  document.querySelector("#checkup-identity-summary").classList.remove("flex");
+  document.querySelector("#edit-checkup-identity").classList.remove("hidden");
+  document.querySelector("#history-department").disabled = false;
   departmentSelect.disabled = false;
   employeeSelect.disabled = false;
   departmentSelect.value = "";
@@ -2710,6 +3208,7 @@ async function initializeGuestApp() {
     if (button.dataset.tabTarget !== "checkup") button.classList.add("hidden");
   });
   document.querySelector('[data-tab-target="profile"]').classList.remove("hidden");
+  document.querySelector(".bottom-nav").classList.remove("has-admin-profile", "has-admin-settings");
   setTab("checkup", false);
   document.querySelector("#daily-coverage-card").classList.add("hidden");
   appShell.classList.add("guest-mode");
@@ -2797,6 +3296,7 @@ async function handleSignOut() {
   currentUser = null;
   currentProfile = null;
   currentEmployeeId = null;
+  currentDepartmentId = null;
   guestMode = false;
   departments = [];
   employees = [];
@@ -2811,6 +3311,19 @@ function bindEvents() {
   applySelectionModes();
   document.querySelector("#login-form").addEventListener("submit", handleLogin);
   document.querySelector("#signout-button").addEventListener("click", handleSignOut);
+  document.querySelector("#change-password-button").addEventListener("click", openChangePasswordModal);
+  document.querySelector("#close-change-password").addEventListener("click", () => {
+    changePasswordModal.close();
+    document.querySelector("#change-password-form").reset();
+  });
+  document.querySelector("#change-password-form").addEventListener("submit", handlePasswordChange);
+  document.querySelector("#admin-settings-form").addEventListener("submit", handleAdminSettingsSave);
+  document.querySelector("#reload-admin-settings").addEventListener("click", () => {
+    loadAdminSettings(true).catch((error) => {
+      console.error("Admin settings reload failed:", error);
+      showToast(`Gagal memuat ulang pengaturan: ${error.message}`, true);
+    });
+  });
   document.querySelector("#guest-mode-button").addEventListener("click", async () => {
     try {
       await initializeGuestApp();
@@ -3005,6 +3518,7 @@ function bindEvents() {
     if (isCheckupDraftField(event.target)) saveCheckupDraft();
   });
   checkupForm.addEventListener("change", (event) => {
+    if (event.target?.name === "has_complaint_today") updateComplaintSymptomsVisibility();
     if (isCheckupDraftField(event.target)) saveCheckupDraft();
   });
   checkupForm.addEventListener("submit", submitCheckup);
@@ -3069,6 +3583,14 @@ function bindEvents() {
   document.querySelectorAll("[data-summary-filter]").forEach((card) => {
     card.addEventListener("click", () => openSummaryFilter(card.dataset.summaryFilter));
   });
+  document.querySelector("#close-checkup-confirm-modal")?.addEventListener("click", () => checkupConfirmModal.close());
+  document.querySelector("#cancel-checkup-submit")?.addEventListener("click", () => checkupConfirmModal.close());
+  checkupConfirmModal?.addEventListener("click", (event) => {
+    if (event.target === checkupConfirmModal) checkupConfirmModal.close();
+  });
+  document.querySelector("#confirm-checkup-submit")?.addEventListener("click", () => {
+    checkupConfirmModal.close("confirm");
+  });
   document.querySelector("#export-csv").addEventListener("click", exportCsv);
   document.querySelector("#close-export-modal")?.addEventListener("click", () => exportConfirmModal.close());
   document.querySelector("#cancel-export-modal")?.addEventListener("click", () => exportConfirmModal.close());
@@ -3109,7 +3631,7 @@ function bindEvents() {
       // 4. Tutup modal & segarkan tampilan riwayat serta ringkasan
       exportConfirmModal.close();
       await loadCheckups();
-      if (isAdmin()) await loadDailyCoverage();
+      if (isSummaryViewer()) await loadDailyCoverage();
 
       showToast(`File CSV berhasil diunduh dan ${deletedCount} riwayat berhasil dihapus.`);
     } catch (error) {
@@ -3121,10 +3643,12 @@ function bindEvents() {
   });
 
   window.addEventListener("online", () => {
+    if (!privacyGatePassed) return;
     updateNetworkAndQueueUI();
     syncOfflineQueue(false);
   });
   window.addEventListener("offline", () => {
+    if (!privacyGatePassed) return;
     updateNetworkAndQueueUI();
   });
   offlineQueueBadge?.addEventListener("click", openQueueModal);
@@ -3135,6 +3659,7 @@ function bindEvents() {
 }
 async function boot() {
   bindEvents();
+  bindPrivacyNoticeEvents();
   updateTemperatureDisplay();
   setActiveStep(1);
   refreshIcons();
@@ -3145,25 +3670,25 @@ async function boot() {
     });
   }
 
+  if (!supabaseFactory) {
+    throw new Error("Supabase SDK gagal dimuat dari CDN.");
+  }
+  if (SUPABASE_URL.includes("YOUR_PROJECT_ID") || SUPABASE_ANON_KEY.includes("YOUR_SUPABASE")) {
+    throw new Error("Isi URL dan anon/publishable key Supabase di config.js.");
+  }
+  client = supabaseFactory(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+  });
+  await requestPrivacyNotice();
+  client = supabaseFactory(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+  });
   await updateNetworkAndQueueUI();
   if (navigator.onLine) {
     syncOfflineQueue(false);
   }
-
-  if (!supabaseFactory) {
-    await showLogin();
-    showToast("Supabase SDK gagal dimuat dari CDN.", true);
-    return;
-  }
-  if (SUPABASE_URL.includes("YOUR_PROJECT_ID") || SUPABASE_ANON_KEY.includes("YOUR_SUPABASE")) {
-    await showLogin();
-    showToast("Isi URL dan anon/publishable key Supabase di config.js.", true);
-    return;
-  }
-  client = supabaseFactory(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
-  });
   await syncAppTimezone();
+  await syncCheckupLocationSetting();
   await syncEmployeeDisplayLimit();
 
   client.auth.onAuthStateChange((_event, session) => {
@@ -3205,6 +3730,10 @@ async function boot() {
 
 boot().catch((error) => {
   console.error("Application startup failed:", error);
+  if (!privacyGatePassed) {
+    showPrivacyNoticeError(error);
+    return;
+  }
   showLogin();
   showToast(`Aplikasi gagal dimulai: ${error.message}`, true);
 });
