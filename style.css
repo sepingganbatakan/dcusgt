@@ -4,6 +4,11 @@
   --brand-dark: #1d4ed8;
 }
 
+[hidden],
+.hidden {
+  display: none !important;
+}
+
 * {
   -webkit-tap-highlight-color: transparent;
 }

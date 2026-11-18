@@ -2,11 +2,12 @@
  * sw.js - Service Worker untuk Offline-First Shell Daily Checkup
  */
 
-const CACHE_NAME = "sgt-dcu-cache-v4";
+const CACHE_NAME = "sgt-dcu-cache-v7";
 
 const STATIC_ASSETS = [
   "./",
   "./index.html",
+  "./tailwind.min.css",
   "./style.css",
   "./config.js",
   "./app.js",
@@ -15,9 +16,8 @@ const STATIC_ASSETS = [
 
 // External CDN dependencies to cache
 const CDN_ASSETS = [
-  "https://cdn.tailwindcss.com",
   "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2",
-  "https://unpkg.com/lucide@latest",
+  "https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js",
   "https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap"
 ];
 
@@ -68,32 +68,34 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Network-First with Cache Fallback for navigation & app shell
+  // Stale-While-Revalidate untuk static assets & font binaries:
+  // Sajikan dari cache instan (<2ms), perbarui di latar belakang
   event.respondWith(
-    fetch(request)
-      .then((networkResponse) => {
-        if (networkResponse && networkResponse.status === 200) {
-          const responseClone = networkResponse.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(request, responseClone);
+    caches.match(request).then((cachedResponse) => {
+      const fetchPromise = fetch(request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const responseClone = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(request, responseClone);
+            });
+          }
+          return networkResponse;
+        })
+        .catch(async () => {
+          // Fallback untuk navigation request ke index.html
+          if (request.mode === "navigate") {
+            return caches.match("./index.html");
+          }
+          return cachedResponse || new Response("Koneksi offline dan aset belum tercache.", {
+            status: 503,
+            statusText: "Service Unavailable",
+            headers: { "Content-Type": "text/plain" }
           });
-        }
-        return networkResponse;
-      })
-      .catch(async () => {
-        const cachedResponse = await caches.match(request);
-        if (cachedResponse) {
-          return cachedResponse;
-        }
-        // Fallback untuk navigation request ke index.html
-        if (request.mode === "navigate") {
-          return caches.match("./index.html");
-        }
-        return new Response("Koneksi offline dan aset belum tercache.", {
-          status: 503,
-          statusText: "Service Unavailable",
-          headers: { "Content-Type": "text/plain" }
         });
-      })
+
+      // Kembalikan cache secepatnya jika ada; jika tidak, tunggu fetch jaringan
+      return cachedResponse || fetchPromise;
+    })
   );
 });

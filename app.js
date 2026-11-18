@@ -19,7 +19,9 @@ import {
   evaluateReadiness
 } from "./offline-storage.js";
 
-const supabaseFactory = window.supabase?.createClient;
+function getSupabaseFactory() {
+  return window.supabase?.createClient;
+}
 const loginScreen = document.querySelector("#login-screen");
 const appShell = document.querySelector("#app-shell");
 const loggedInIdentity = document.querySelector("#logged-in-identity");
@@ -321,6 +323,69 @@ async function syncEmployeeDisplayLimit() {
     console.warn("Could not sync employee display limit from database, using fallback:", err);
   }
   applyEmployeeDisplayLimitUI();
+}
+
+const SETTINGS_CACHE_KEY = "sgt_dcu_settings_cache_v1";
+
+function loadCachedAppSettings() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_CACHE_KEY);
+    if (!raw) return;
+    const cached = JSON.parse(raw);
+    if (cached.activeTimezone && typeof cached.activeTimezone === "string") {
+      activeTimezone = cached.activeTimezone;
+    }
+    if (typeof cached.waNotificationsEnabled === "boolean") {
+      waNotificationsEnabled = cached.waNotificationsEnabled;
+    }
+    if (typeof cached.checkupLocationEnabled === "boolean") {
+      checkupLocationEnabled = cached.checkupLocationEnabled;
+      applyCheckupLocationSettingUI();
+    }
+    if (typeof cached.measurementProviderEnabled === "boolean" && Array.isArray(cached.measurementProviderNames)) {
+      measurementProviderEnabled = cached.measurementProviderEnabled;
+      measurementProviderNames = cached.measurementProviderNames;
+    }
+    if ([1, 2, 3].includes(cached.checkupPageCount)) {
+      checkupPageCount = cached.checkupPageCount;
+    }
+    if (typeof cached.employeeDisplayLimit === "number" && cached.employeeDisplayLimit > 0) {
+      employeeDisplayLimit = cached.employeeDisplayLimit;
+      applyEmployeeDisplayLimitUI();
+    }
+    applyCheckupPageLayoutUI();
+  } catch (err) {
+    console.warn("Could not load cached app settings:", err);
+  }
+}
+
+function saveCachedAppSettings() {
+  try {
+    localStorage.setItem(SETTINGS_CACHE_KEY, JSON.stringify({
+      activeTimezone,
+      waNotificationsEnabled,
+      checkupLocationEnabled,
+      measurementProviderEnabled,
+      measurementProviderNames,
+      checkupPageCount,
+      employeeDisplayLimit
+    }));
+  } catch (err) {
+    console.warn("Could not save app settings to cache:", err);
+  }
+}
+
+async function syncBootstrapSettings() {
+  if (!client) return;
+  await Promise.allSettled([
+    syncAppTimezone(),
+    syncWhatsAppNotificationSetting(),
+    syncCheckupLocationSetting(),
+    syncMeasurementProviderSetting(),
+    syncCheckupPageCountSetting(),
+    syncEmployeeDisplayLimit()
+  ]);
+  saveCachedAppSettings();
 }
 
 const statusDetails = {
@@ -648,9 +713,28 @@ function completePrivacyNotice() {
   startupScreen.classList.add("hidden");
 }
 
+const PRIVACY_NOTICE_CACHE_KEY = "sgt_dcu_privacy_notice_cache_v1";
+
 async function requestPrivacyNotice() {
-  const { data, error } = await client.rpc("get_dcu_notice_settings");
-  if (error) throw error;
+  let data = null;
+  try {
+    const res = await client.rpc("get_dcu_notice_settings");
+    if (!res.error && res.data) {
+      data = res.data;
+      try {
+        localStorage.setItem(PRIVACY_NOTICE_CACHE_KEY, JSON.stringify(data));
+      } catch (_) {}
+    } else if (res.error) {
+      throw res.error;
+    }
+  } catch (err) {
+    console.warn("Could not fetch privacy notice from server, checking cache:", err);
+    try {
+      const cached = localStorage.getItem(PRIVACY_NOTICE_CACHE_KEY);
+      if (cached) data = JSON.parse(cached);
+    } catch (_) {}
+    if (!data) throw err;
+  }
   if (!data || typeof data !== "object" || Array.isArray(data)) {
     throw new Error("Supabase returned invalid DCU notice settings.");
   }
@@ -727,8 +811,13 @@ function escapeHtml(value = "") {
   })[character]);
 }
 
-function refreshIcons() {
-  window.lucide?.createIcons();
+function refreshIcons(root) {
+  if (!window.lucide) return;
+  if (root && root instanceof Element) {
+    window.lucide.createIcons({ root });
+  } else {
+    window.lucide.createIcons();
+  }
 }
 
 function isAdmin() {
@@ -2183,7 +2272,7 @@ async function renderQueueModal() {
         </div>
       `;
     }).join("");
-    refreshIcons();
+    refreshIcons(queueList);
   } catch (err) {
     queueList.innerHTML = `<p class="text-xs text-rose-500 py-2">Gagal membaca antrean: ${escapeHtml(err.message)}</p>`;
   }
@@ -2358,44 +2447,7 @@ async function syncOfflineQueue(showToastNotice = false) {
   renderQueueModal();
 }
 
-async function loadGuestDirectory() {
-  let directory = [];
-  try {
-    if (!navigator.onLine) throw new Error("Offline");
-    const { data, error } = await client.rpc("get_guest_directory");
-    if (error) throw error;
-    directory = data ?? [];
-
-    departments = [...new Map(directory.map((row) => [
-      row.department_id,
-      { id: row.department_id, name: row.department_name }
-    ])).values()].sort((a, b) => a.name.localeCompare(b.name, "id"));
-    employees = directory.filter((row) => row.employee_id).map((row) => ({
-      id: row.employee_id,
-      department_id: row.department_id,
-      full_name: row.employee_name,
-      is_active: true
-    })).sort((a, b) => a.full_name.localeCompare(b.full_name, "id"));
-
-    // Simpan ke cache lokal IndexedDB (hanya data publik aman)
-    await saveDirectoryCache(departments, employees);
-  } catch (err) {
-    console.warn("Memuat direktori dari cache offline:", err);
-    try {
-      const cached = await getDirectoryCache();
-      if (cached && (cached.departments?.length > 0 || cached.employees?.length > 0)) {
-        departments = cached.departments || [];
-        employees = cached.employees || [];
-        showToast("Menggunakan direktori tersimpan (offline).");
-      } else {
-        throw new Error("Data karyawan belum tersedia offline. Hubungkan ke internet setidaknya sekali.");
-      }
-    } catch (cacheErr) {
-      throw cacheErr;
-    }
-  }
-
-  // Gabungkan penambahan karyawan tamu yang masih berada di antrean lokal
+async function mergePendingOfflineGuests() {
   try {
     const queue = await getPendingOfflineQueue();
     const pendingGuests = queue.filter((i) => i.action === "add_guest_employee");
@@ -2414,10 +2466,72 @@ async function loadGuestDirectory() {
     }
     employees.sort((a, b) => a.full_name.localeCompare(b.full_name, "id"));
   } catch (_) {}
+}
 
-  populateDepartmentSelect(departmentSelect);
-  populateDepartmentSelect(document.querySelector("#profile-department"));
-  updateEmployeeOptions();
+async function loadGuestDirectory() {
+  let hasRenderedFromCache = false;
+
+  // 1. Sajikan instan dari cache IndexedDB (<10ms) jika tersedia
+  try {
+    const cached = await getDirectoryCache();
+    if (cached && (cached.departments?.length > 0 || cached.employees?.length > 0)) {
+      departments = cached.departments || [];
+      employees = cached.employees || [];
+      await mergePendingOfflineGuests();
+      populateDepartmentSelect(departmentSelect);
+      populateDepartmentSelect(document.querySelector("#profile-department"));
+      updateEmployeeOptions();
+      hasRenderedFromCache = true;
+    }
+  } catch (e) {
+    console.warn("Gagal membaca cache awal direktori:", e);
+  }
+
+  // 2. Jika online, perbarui data dari server di latar belakang/langsung
+  try {
+    if (!navigator.onLine) {
+      if (!hasRenderedFromCache) throw new Error("Offline");
+      return;
+    }
+    const { data, error } = await client.rpc("get_guest_directory");
+    if (error) throw error;
+    const directory = data ?? [];
+
+    departments = [...new Map(directory.map((row) => [
+      row.department_id,
+      { id: row.department_id, name: row.department_name }
+    ])).values()].sort((a, b) => a.name.localeCompare(b.name, "id"));
+    employees = directory.filter((row) => row.employee_id).map((row) => ({
+      id: row.employee_id,
+      department_id: row.department_id,
+      full_name: row.employee_name,
+      is_active: true
+    })).sort((a, b) => a.full_name.localeCompare(b.full_name, "id"));
+
+    // Simpan ke cache lokal IndexedDB (hanya data publik aman)
+    await saveDirectoryCache(departments, employees);
+    await mergePendingOfflineGuests();
+
+    populateDepartmentSelect(departmentSelect);
+    populateDepartmentSelect(document.querySelector("#profile-department"));
+    updateEmployeeOptions();
+  } catch (err) {
+    if (!hasRenderedFromCache) {
+      console.warn("Memuat direktori dari cache offline fallback:", err);
+      const cached = await getDirectoryCache();
+      if (cached && (cached.departments?.length > 0 || cached.employees?.length > 0)) {
+        departments = cached.departments || [];
+        employees = cached.employees || [];
+        await mergePendingOfflineGuests();
+        populateDepartmentSelect(departmentSelect);
+        populateDepartmentSelect(document.querySelector("#profile-department"));
+        updateEmployeeOptions();
+        showToast("Menggunakan direktori tersimpan (offline).");
+      } else {
+        throw new Error("Data karyawan belum tersedia offline. Hubungkan ke internet setidaknya sekali.");
+      }
+    }
+  }
 }
 
 async function loadEmployees() {
@@ -2616,7 +2730,7 @@ async function loadEmployeesWithoutTodayCheckup(start, end, departmentId) {
 function renderHistory() {
   if (!checkups.length) {
     historyList.innerHTML = '<div class="empty-state"><i data-lucide="clipboard-list"></i>Belum ada checkup untuk filter ini.</div>';
-    refreshIcons();
+    refreshIcons(historyList);
     return;
   }
 
@@ -2653,7 +2767,7 @@ function renderHistory() {
       ${locationDetails}
     </article>`;
   }).join("");
-  refreshIcons();
+  refreshIcons(historyList);
 }
 
 function renderSummary() {
@@ -2832,7 +2946,7 @@ function showResult(payload, status, checkedAt, isOffline = false) {
   resultCard.dataset.report = text;
   resultCard.classList.remove("hidden");
   resultCard.querySelector("#copy-report")?.addEventListener("click", copyReport);
-  refreshIcons();
+  refreshIcons(resultCard);
   resultCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
@@ -3490,12 +3604,7 @@ async function initializeApp(user) {
   document.querySelector("#change-password-button").classList.remove("hidden");
   if (isAdmin()) await loadAdminHrMenuVisibility();
   document.querySelector("#admin-settings-form").classList.toggle("hidden", currentProfile.role !== "admin");
-  await syncAppTimezone();
-  await syncWhatsAppNotificationSetting();
-  await syncCheckupLocationSetting();
-  await syncMeasurementProviderSetting();
-  await syncCheckupPageCountSetting();
-  await syncEmployeeDisplayLimit();
+  await syncBootstrapSettings();
   resetCheckupResponses();
   todayCheckupCount = null;
   todayReadinessCounts = null;
@@ -3604,24 +3713,17 @@ async function initializeGuestApp() {
   document.querySelector("#admin-settings-form").classList.add("hidden");
   try {
     if (!navigator.onLine) throw new Error("Offline");
-    const { data: enabled, error: settingsError } = await client.rpc("is_guest_checkups_enabled");
-    if (settingsError) throw settingsError;
-    if (!enabled) {
+    const guestPromises = [client.rpc("is_guest_checkups_enabled")];
+    if (ALLOW_GUEST_EMPLOYEE_CREATION) {
+      guestPromises.push(client.rpc("is_guest_employee_creation_enabled"));
+    }
+    const results = await Promise.all(guestPromises);
+    const guestCheckupRes = results[0];
+    if (guestCheckupRes.error) throw guestCheckupRes.error;
+    if (!guestCheckupRes.data) {
       throw new Error("Mode tamu belum diaktifkan di Supabase. Lihat guest_mode.sql.");
     }
-    await syncWhatsAppNotificationSetting();
-    await syncAppTimezone();
-    await syncCheckupLocationSetting();
-    await syncMeasurementProviderSetting();
-    await syncCheckupPageCountSetting();
-    await syncEmployeeDisplayLimit();
-
-    guestEmployeeCreationEnabled = false;
-    if (ALLOW_GUEST_EMPLOYEE_CREATION) {
-      const employeeSetting = await client.rpc("is_guest_employee_creation_enabled");
-      if (employeeSetting.error) throw employeeSetting.error;
-      guestEmployeeCreationEnabled = Boolean(employeeSetting.data);
-    }
+    guestEmployeeCreationEnabled = Boolean(ALLOW_GUEST_EMPLOYEE_CREATION && results[1]?.data);
   } catch (err) {
     if (!navigator.onLine || err.message?.includes("Failed to fetch") || err.name === "TypeError" || err.message === "Offline") {
       console.warn("Inisialisasi mode tamu dalam status offline:", err);
@@ -4151,6 +4253,7 @@ function bindEvents() {
   closeQueueBtn?.addEventListener("click", () => queueModal?.close());
 }
 async function boot() {
+  loadCachedAppSettings();
   bindEvents();
   bindPrivacyNoticeEvents();
   updateTemperatureDisplay();
@@ -4163,6 +4266,7 @@ async function boot() {
     });
   }
 
+  const supabaseFactory = getSupabaseFactory();
   if (!supabaseFactory) {
     throw new Error("Supabase SDK gagal dimuat dari CDN.");
   }
@@ -4180,11 +4284,7 @@ async function boot() {
   if (navigator.onLine) {
     syncOfflineQueue(false);
   }
-  await syncAppTimezone();
-  await syncCheckupLocationSetting();
-  await syncMeasurementProviderSetting();
-  await syncCheckupPageCountSetting();
-  await syncEmployeeDisplayLimit();
+  await syncBootstrapSettings();
 
   client.auth.onAuthStateChange((_event, session) => {
     if (!session) {

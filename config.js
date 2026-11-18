@@ -7,7 +7,7 @@ export const ALLOW_GUEST_CHECKUPS = true;
 
 // Guests can add their name to the selected department when it is missing.
 // The Supabase guest employee-creation setting must also be enabled.
-export const ALLOW_GUEST_EMPLOYEE_CREATION = true;
+export const ALLOW_GUEST_EMPLOYEE_CREATION = false;
 
 // Choose "tabs" or "dropdown" for department.
 // These settings apply to both checkup identity and the guest profile form.

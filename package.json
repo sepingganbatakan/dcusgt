@@ -1,0 +1,12 @@
+{
+  "name": "sgtdcu",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Daily Checkup PEP Sangatta",
+  "scripts": {
+    "build:css": "npx -y tailwindcss@3 -i ./tailwind-input.css -o ./tailwind.min.css --minify"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.19"
+  }
+}
