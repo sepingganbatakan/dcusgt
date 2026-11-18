@@ -22,6 +22,7 @@ import {
 const supabaseFactory = window.supabase?.createClient;
 const loginScreen = document.querySelector("#login-screen");
 const appShell = document.querySelector("#app-shell");
+const loggedInIdentity = document.querySelector("#logged-in-identity");
 const toastElement = document.querySelector("#toast");
 const startupScreen = document.querySelector("#startup-screen");
 const startupMessage = document.querySelector("#startup-message");
@@ -36,10 +37,10 @@ const resultCard = document.querySelector("#result-card");
 const employeeModal = document.querySelector("#employee-modal");
 const checkupConfirmModal = document.querySelector("#checkup-confirm-modal");
 const exportConfirmModal = document.querySelector("#export-confirm-modal");
+const missingDcuModal = document.querySelector("#missing-dcu-modal");
 const historyList = document.querySelector("#history-list");
 const offlineQueueBadge = document.querySelector("#offline-queue-badge");
 const syncIcon = document.querySelector("#sync-icon");
-const syncText = document.querySelector("#sync-text");
 const queueCountBadge = document.querySelector("#queue-count");
 const manualSyncButton = document.querySelector("#manual-sync-button");
 const queueModal = document.querySelector("#queue-modal");
@@ -56,6 +57,9 @@ let currentUser;
 let currentProfile;
 let adminSettings = [];
 let adminSettingsLoaded = false;
+let adminHrMenuVisibility = { profile: true, checkup: true };
+let adminHrMenuVisibilityLoaded = false;
+let linkedAccountEmployeeId = null;
 let currentEmployeeId;
 let currentDepartmentId;
 let privacyGatePassed = false;
@@ -68,6 +72,8 @@ let checkups = [];
 let todayCheckupCount = null;
 let todayReadinessCounts = null;
 let activeEmployeeCount = null;
+let employeesWithoutTodayCheckup = null;
+let selectedMissingDcuDepartmentId = "";
 let activeStep = 1;
 let toastTimeout;
 let realtimeChannel;
@@ -79,6 +85,9 @@ let activeTimezone = (typeof APP_TIMEZONE === "string" && APP_TIMEZONE.trim())
   : "Asia/Jakarta";
 let waNotificationsEnabled = false;
 let checkupLocationEnabled = false;
+let measurementProviderEnabled = false;
+let measurementProviderNames = [];
+let checkupPageCount = 3;
 let employeeDisplayLimit = (typeof DEFAULT_EMPLOYEE_DISPLAY_LIMIT === "number" && DEFAULT_EMPLOYEE_DISPLAY_LIMIT > 0)
   ? DEFAULT_EMPLOYEE_DISPLAY_LIMIT
   : 4;
@@ -125,6 +134,109 @@ async function syncWhatsAppNotificationSetting() {
 function applyCheckupLocationSettingUI() {
   document.querySelector("#checkup-location-notice")
     ?.classList.toggle("hidden", !checkupLocationEnabled);
+}
+
+function getLastCheckupStep() {
+  if (checkupPageCount === 1) return 2;
+  if (checkupPageCount === 2 || !measurementProviderEnabled) return 3;
+  return 4;
+}
+
+function applyCheckupPageLayoutUI() {
+  const physicalStep = document.querySelector("#checkup-physical-step");
+  const symptomsStep = document.querySelector("#checkup-symptoms-step");
+  const providerStep = document.querySelector("#measurement-provider-step");
+  const providerSelect = document.querySelector("#measurement-provider");
+  const providerEmptyNotice = document.querySelector("#measurement-provider-empty");
+  const stepThreeNextButton = document.querySelector("#checkup-step3-next");
+  const stepThreeSubmitButton = document.querySelector("#submit-checkup");
+  const physicalNavigation = document.querySelector("#checkup-step2-navigation");
+  const physicalPreviousButton = document.querySelector("#checkup-step2-prev");
+  const symptomsNavigation = document.querySelector("#checkup-step3-navigation");
+  const symptomsPreviousButton = document.querySelector("#checkup-step3-prev");
+  const providerAnchor = document.querySelector("#measurement-provider-step-anchor");
+  const providerNavigation = document.querySelector("#measurement-provider-navigation");
+  const providerPreviousButton = document.querySelector("#measurement-provider-prev");
+
+  if (
+    !physicalStep || !symptomsStep || !providerStep || !providerSelect
+    || !stepThreeNextButton || !stepThreeSubmitButton || !physicalNavigation
+    || !physicalPreviousButton
+    || !symptomsNavigation || !symptomsPreviousButton || !providerAnchor
+    || !providerNavigation || !providerPreviousButton
+  ) return;
+
+  const selectedProvider = providerSelect.value;
+  providerSelect.replaceChildren(new Option("Pilih tenaga medis", ""));
+  for (const name of measurementProviderNames) {
+    providerSelect.add(new Option(name, name));
+  }
+  providerSelect.value = measurementProviderNames.includes(selectedProvider) ? selectedProvider : "";
+  symptomsStep.dataset.step = checkupPageCount === 1 ? "2" : "3";
+  providerStep.dataset.step = checkupPageCount === 1 || checkupPageCount === 2
+    ? String(checkupPageCount === 1 ? 2 : 3)
+    : "4";
+  if (checkupPageCount < 3) {
+    symptomsStep.insertBefore(providerStep, symptomsNavigation);
+  } else {
+    providerAnchor.after(providerStep);
+  }
+  providerStep.classList.toggle("hidden", !measurementProviderEnabled);
+  providerEmptyNotice?.classList.toggle("hidden", measurementProviderNames.length > 0);
+  physicalNavigation.classList.toggle("hidden", checkupPageCount === 1);
+  physicalPreviousButton.classList.add("hidden");
+  physicalNavigation.classList.toggle("grid-cols-1", true);
+  physicalNavigation.classList.toggle("grid-cols-2", false);
+  symptomsPreviousButton.classList.toggle("hidden", checkupPageCount === 1);
+  stepThreeNextButton.classList.toggle("hidden", !measurementProviderEnabled || checkupPageCount !== 3);
+  stepThreeSubmitButton.classList.toggle("hidden", measurementProviderEnabled && checkupPageCount === 3);
+  symptomsNavigation.classList.toggle("grid-cols-1", checkupPageCount === 1);
+  symptomsNavigation.classList.toggle("grid-cols-2", checkupPageCount !== 1);
+  providerNavigation.classList.toggle("hidden", checkupPageCount !== 3);
+  providerPreviousButton.classList.toggle("hidden", checkupPageCount !== 3);
+  providerNavigation.classList.toggle("grid-cols-1", false);
+  providerNavigation.classList.toggle("grid-cols-2", true);
+  if (activeStep > getLastCheckupStep()) setActiveStep(getLastCheckupStep());
+  else setActiveStep(activeStep);
+}
+
+async function syncCheckupPageCountSetting() {
+  if (!client) return;
+  try {
+    const { data, error } = await client.rpc("get_dcu_page_count");
+    if (error) throw error;
+    if (![1, 2, 3].includes(data)) {
+      throw new Error("Supabase mengembalikan jumlah halaman DCU yang tidak valid.");
+    }
+    checkupPageCount = data;
+  } catch (error) {
+    console.warn("Could not sync DCU page count; using the default layout:", error);
+    checkupPageCount = 3;
+  }
+  applyCheckupPageLayoutUI();
+}
+
+async function syncMeasurementProviderSetting() {
+  if (!client) return;
+  try {
+    const { data, error } = await client.rpc("get_measurement_provider_settings");
+    if (error) throw error;
+    if (
+      !data
+      || typeof data.enabled !== "boolean"
+      || !Array.isArray(data.names)
+      || data.names.some((name) => typeof name !== "string")
+    ) {
+      throw new Error("Supabase mengembalikan konfigurasi tenaga medis dengan format yang tidak valid.");
+    }
+    measurementProviderEnabled = data.enabled;
+    measurementProviderNames = [...new Set(data.names.map((name) => name.trim()).filter(Boolean))];
+  } catch (error) {
+    console.warn("Could not sync measurement provider settings; hiding the provider step:", error);
+    measurementProviderEnabled = false;
+    measurementProviderNames = [];
+  }
+  applyCheckupPageLayoutUI();
 }
 
 async function syncCheckupLocationSetting() {
@@ -308,7 +420,7 @@ function renderAdminSettings(settings) {
           if (typeof setting.max === "number") input.max = String(setting.max);
         }
       }
-      input.required = true;
+      input.required = setting.required !== false;
       card.append(label, input);
     }
 
@@ -387,6 +499,12 @@ async function handleAdminSettingsSave(event) {
       if (Object.hasOwn(values, "checkup_location_enabled")) {
         await syncCheckupLocationSetting();
       }
+      if (Object.hasOwn(values, "measurement_provider_enabled") || Object.hasOwn(values, "measurement_provider_names")) {
+        await syncMeasurementProviderSetting();
+      }
+      if (Object.hasOwn(values, "dcu_page_count")) {
+        await syncCheckupPageCountSetting();
+      }
     } catch (error) {
       console.error("Saved settings but runtime refresh failed:", error);
       showToast(`Pengaturan tersimpan, tetapi tampilan gagal diperbarui: ${error.message}`, true);
@@ -394,6 +512,92 @@ async function handleAdminSettingsSave(event) {
   } catch (error) {
     console.error("Admin settings save failed:", error);
     showToast(`Gagal menyimpan pengaturan: ${error.message}`, true);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+function renderAdminHrMenuVisibility() {
+  document.querySelector("#menu-profile-visible").checked = adminHrMenuVisibility.profile;
+  document.querySelector("#menu-checkup-visible").checked = adminHrMenuVisibility.checkup;
+}
+
+async function loadAdminHrMenuVisibility(forceReload = false) {
+  if (!isAdmin()) {
+    throw new Error("Hanya admin atau HR yang dapat membaca konfigurasi visibilitas menu.");
+  }
+  if (adminHrMenuVisibilityLoaded && !forceReload) return;
+
+  const { data, error } = await client.rpc("get_admin_hr_menu_visibility");
+  if (error) {
+    adminHrMenuVisibilityLoaded = false;
+    throw error;
+  }
+  if (
+    !data
+    || typeof data !== "object"
+    || typeof data.profile !== "boolean"
+    || typeof data.checkup !== "boolean"
+  ) {
+    adminHrMenuVisibilityLoaded = false;
+    throw new Error("Supabase mengembalikan konfigurasi visibilitas menu dengan format yang tidak valid.");
+  }
+  adminHrMenuVisibility = { profile: data.profile, checkup: data.checkup };
+  adminHrMenuVisibilityLoaded = true;
+  renderAdminHrMenuVisibility();
+}
+
+async function handleMenuVisibilitySave(event) {
+  event.preventDefault();
+  if (currentProfile?.role !== "admin") {
+    showToast("Hanya admin yang dapat mengubah visibilitas menu.", true);
+    return;
+  }
+
+  const button = document.querySelector("#save-menu-visibility");
+  const values = {
+    profile: document.querySelector("#menu-profile-visible").checked,
+    checkup: document.querySelector("#menu-checkup-visible").checked
+  };
+  let saved = false;
+  setBusy(button, true, "Menyimpan…");
+  try {
+    const { error } = await client.rpc("update_admin_hr_menu_visibility", { p_values: values });
+    if (error) throw error;
+
+    saved = true;
+    const checkupWasEnabled = adminHrMenuVisibility.checkup;
+    adminHrMenuVisibility = values;
+    adminHrMenuVisibilityLoaded = true;
+    currentEmployeeId = values.checkup ? linkedAccountEmployeeId : null;
+    applyRoleMenuVisibility();
+    configureCheckupPhoneField();
+
+    if (checkupWasEnabled !== values.checkup) {
+      await loadEmployees();
+      if (isLinkedAdminHrCheckupAccount()) {
+        const dailyCheckup = await loadAuthenticatedDailyCheckup(currentEmployeeId);
+        if (dailyCheckup) showDailyCheckupStatus(dailyCheckup);
+        else showCheckupForm(1);
+      }
+    }
+
+    const activeTab = document.querySelector(".nav-item.active")?.dataset.tabTarget;
+    if (
+      (activeTab === "profile" && !values.profile)
+      || (activeTab === "checkup" && !isLinkedAdminHrCheckupAccount())
+    ) {
+      setTab("summary", false);
+    }
+    showToast("Visibilitas menu berhasil disimpan.");
+  } catch (error) {
+    console.error("Menu visibility save failed:", error);
+    showToast(
+      saved
+        ? `Visibilitas menu tersimpan, tetapi tampilan gagal diperbarui: ${error.message}`
+        : `Gagal menyimpan visibilitas menu: ${error.message}`,
+      true
+    );
   } finally {
     setBusy(button, false);
   }
@@ -543,6 +747,48 @@ function isEmployeeAccount() {
   return ["employee", "department_rep"].includes(currentProfile?.role);
 }
 
+function isLinkedAdminHrCheckupAccount() {
+  return isAdmin() && adminHrMenuVisibility.checkup && Boolean(linkedAccountEmployeeId);
+}
+
+function isSelfCheckupAccount() {
+  return isEmployeeAccount() || isLinkedAdminHrCheckupAccount();
+}
+
+function isCheckupIdentityLocked() {
+  return isDepartmentRepresentative() || isLinkedAdminHrCheckupAccount();
+}
+
+function configureCheckupPhoneField() {
+  const required = isLinkedAdminHrCheckupAccount();
+  const wrapper = document.querySelector("#checkup-whatsapp-wrap");
+  const input = document.querySelector("#checkup-whatsapp");
+  wrapper.classList.toggle("hidden", !required);
+  input.required = required;
+}
+
+function applyRoleMenuVisibility() {
+  const profileButton = document.querySelector('[data-tab-target="profile"]');
+  const checkupButton = document.querySelector('[data-tab-target="checkup"]');
+  const settingsButton = document.querySelector('[data-tab-target="settings"]');
+  const bottomNav = document.querySelector(".bottom-nav");
+  profileButton.classList.toggle("hidden", !guestMode && (!isAdmin() || !adminHrMenuVisibility.profile));
+  checkupButton.classList.toggle("hidden", !guestMode && isAdmin() && !isLinkedAdminHrCheckupAccount());
+  settingsButton.classList.toggle("hidden", currentProfile?.role !== "admin");
+  bottomNav.classList.toggle(
+    "has-admin-profile",
+    !profileButton.classList.contains("hidden") && isAdmin()
+  );
+  bottomNav.classList.toggle(
+    "has-admin-settings",
+    currentProfile?.role === "admin"
+  );
+  const visibleMenuCount = [...bottomNav.querySelectorAll(".nav-item")]
+    .filter((button) => !button.classList.contains("hidden"))
+    .length;
+  bottomNav.style.gridTemplateColumns = `repeat(${visibleMenuCount}, minmax(0, 1fr))`;
+}
+
 function normalizeWhatsApp(value) {
   const trimmed = value.trim();
   const digits = trimmed.replace(/\D/g, "");
@@ -638,6 +884,7 @@ function resetCheckupResponses() {
   document.querySelector("#diastolic").value = "";
   document.querySelector("#temperature").value = "36.5";
   document.querySelector("#notes").value = "";
+  document.querySelector("#measurement-provider").value = "";
   checkupForm.querySelectorAll('input[name="fatigue_level"], input[name="sleep_quality"], input[name="symptoms"], input[name="has_complaint_today"]')
     .forEach((input) => { input.checked = false; });
   updateComplaintSymptomsVisibility();
@@ -671,7 +918,7 @@ function persistCheckupSelection() {
 }
 
 function restoreCheckupSelection() {
-  if (!isAdmin()) return;
+  if (!isAdmin() || isLinkedAdminHrCheckupAccount()) return;
   const scope = checkupDraftScope();
   if (!scope) return;
   departmentSelect.value = "";
@@ -712,6 +959,7 @@ function saveCheckupDraft() {
     hasComplaintToday: document.querySelector("#has-complaint-today").checked ? "yes" : "no",
     symptoms,
     notes: document.querySelector("#notes").value,
+    measurementProvider: document.querySelector("#measurement-provider").value,
     step: activeStep
   };
   try {
@@ -723,7 +971,7 @@ function saveCheckupDraft() {
 }
 
 function isCheckupDraftField(target) {
-  return ["systolic", "diastolic", "temperature", "notes"].includes(target?.id)
+  return ["systolic", "diastolic", "temperature", "notes", "measurement-provider"].includes(target?.id)
     || ["fatigue_level", "sleep_quality", "symptoms", "has_complaint_today"].includes(target?.name);
 }
 
@@ -769,8 +1017,12 @@ function restoreCheckupDraft(employeeId) {
   document.querySelector("#has-complaint-today").checked = draft.hasComplaintToday === "yes";
   updateComplaintSymptomsVisibility();
   document.querySelector("#notes").value = typeof draft.notes === "string" ? draft.notes : "";
+  const measurementProvider = typeof draft.measurementProvider === "string" ? draft.measurementProvider : "";
+  document.querySelector("#measurement-provider").value = measurementProviderNames.includes(measurementProvider)
+    ? measurementProvider
+    : "";
   updateTemperatureDisplay();
-  setActiveStep(Number.isInteger(draft.step) && draft.step >= 1 && draft.step <= 3 ? draft.step : 2);
+  setActiveStep(Number.isInteger(draft.step) && draft.step >= 1 && draft.step <= getLastCheckupStep() ? draft.step : 2);
   return true;
 }
 
@@ -968,7 +1220,7 @@ function showDailyCheckupStatus(checkup) {
   const canSubmitMore = Boolean(checkup?.can_submit_more) && !checkup?.is_offline;
   const nextButton = document.querySelector("#daily-checkup-next");
   nextButton.classList.toggle("hidden", !canSubmitMore);
-  nextButton.onclick = () => showCheckupForm(2);
+  nextButton.onclick = () => showCheckupForm(isLinkedAdminHrCheckupAccount() ? 1 : 2);
   if (checkup?.is_offline) {
     const boldEl = completedNotice.querySelector("b");
     const spanEl = completedNotice.querySelector("span");
@@ -990,7 +1242,7 @@ function showDailyCheckupStatus(checkup) {
   // Department representatives must keep their linked checkup identity.
   const existingBtn = document.querySelector('.admin-employee-switch-btn');
   if (existingBtn) existingBtn.remove();
-  if (isDepartmentRepresentative()) return;
+  if (isCheckupIdentityLocked()) return;
 
   const btn = document.createElement('button');
   btn.type = 'button';
@@ -1073,7 +1325,7 @@ async function loadAuthenticatedDailyCheckup(employeeId) {
   const { start, end } = getDateRange();
   const { data, error } = await client
     .from("checkups")
-    .select("id, employee_id, checked_at, systolic, diastolic, temperature_c, fatigue_level, sleep_quality, symptoms, notes, readiness_status")
+    .select("id, employee_id, checked_at, systolic, diastolic, temperature_c, fatigue_level, sleep_quality, symptoms, notes, measurement_provider, readiness_status")
     .eq("employee_id", employeeId)
     .gte("checked_at", start)
     .lt("checked_at", end)
@@ -1235,13 +1487,15 @@ function formatDate(value, includeTime = true) {
 }
 
 function setActiveStep(step) {
+  step = Math.min(step, getLastCheckupStep());
   if (guestMode && step === 1) step = 2;
   activeStep = step;
   document.querySelectorAll(".checkup-step").forEach((section) => {
     section.classList.toggle("hidden", Number(section.dataset.step) !== step);
   });
-  const displayStep = guestMode ? step - 1 : step;
-  const totalSteps = guestMode ? 2 : 3;
+  const displayStep = step - 1;
+  const totalSteps = getLastCheckupStep() - 1;
+  checkupProgress.classList.toggle("hidden", !guestMode && step === 1);
   const percent = Math.round((displayStep / totalSteps) * 100);
   document.querySelector("#step-caption").textContent = `LANGKAH ${displayStep} DARI ${totalSteps}`;
   document.querySelector("#step-percent").textContent = `${percent}%`;
@@ -1278,6 +1532,20 @@ function validateStep(step) {
         whatsapp: whatsapp.value
       });
       syncGuestProfileForm();
+    } else if (isLinkedAdminHrCheckupAccount()) {
+      const phone = document.querySelector("#checkup-whatsapp");
+      if (!phone.value.trim()) {
+        phone.setCustomValidity("Nomor HP wajib diisi sebelum checkup.");
+        phone.reportValidity();
+        phone.setCustomValidity("");
+        return false;
+      }
+      if (!isValidWhatsApp(phone.value)) {
+        phone.setCustomValidity("Masukkan nomor HP yang valid, misalnya 081234567890.");
+        phone.reportValidity();
+        phone.setCustomValidity("");
+        return false;
+      }
     }
   }
   if (step === 2) {
@@ -1757,7 +2025,7 @@ function updateEmployeeOptions() {
       : employee.full_name;
     employeeSelect.append(option);
   }
-  employeeSelect.disabled = isDepartmentRepresentative();
+  employeeSelect.disabled = isCheckupIdentityLocked();
   if (!departmentId && !showAllEmployees) {
     employeeSelect.innerHTML = '<option value="">Pilih departemen terlebih dahulu</option>';
   } else if (departmentEmployees.length === 0) {
@@ -1860,16 +2128,19 @@ async function updateNetworkAndQueueUI() {
   offlineQueueBadge.classList.remove("hidden");
   if (!isOnline) {
     offlineQueueBadge.className = "sync-badge is-offline";
-    syncIcon.innerHTML = '<i data-lucide="wifi-off" class="h-3.5 w-3.5 text-amber-700"></i>';
-    syncText.textContent = "Offline";
+    syncIcon.innerHTML = '<i data-lucide="wifi-off" class="text-amber-700"></i>';
+    offlineQueueBadge.setAttribute("aria-label", "Status koneksi: Offline");
+    offlineQueueBadge.title = "Status koneksi: Offline";
   } else if (isSyncing) {
     offlineQueueBadge.className = "sync-badge is-syncing";
-    syncIcon.innerHTML = '<i data-lucide="refresh-cw" class="h-3.5 w-3.5 text-blue-600 animate-spin"></i>';
-    syncText.textContent = "Menyinkronkan…";
+    syncIcon.innerHTML = '<i data-lucide="refresh-cw" class="text-blue-600 animate-spin"></i>';
+    offlineQueueBadge.setAttribute("aria-label", "Sedang menyinkronkan antrean");
+    offlineQueueBadge.title = "Sedang menyinkronkan antrean";
   } else {
     offlineQueueBadge.className = "sync-badge";
-    syncIcon.innerHTML = '<i data-lucide="wifi" class="h-3.5 w-3.5 text-emerald-600"></i>';
-    syncText.textContent = "Online";
+    syncIcon.innerHTML = '<i data-lucide="wifi" class="text-emerald-600"></i>';
+    offlineQueueBadge.setAttribute("aria-label", "Status koneksi: Online");
+    offlineQueueBadge.title = "Status koneksi: Online";
   }
 
   if (pendingCount > 0) {
@@ -2003,6 +2274,7 @@ async function syncOfflineQueue(showToastNotice = false) {
           p_sleep_quality: item.payload.sleep_quality,
           p_symptoms: item.payload.symptoms,
           p_notes: item.payload.notes,
+          p_measurement_provider: item.payload.measurement_provider ?? null,
           p_location_latitude: item.payload.location_latitude ?? null,
           p_location_longitude: item.payload.location_longitude ?? null,
           p_location_accuracy_m: item.payload.location_accuracy_m ?? null,
@@ -2060,7 +2332,7 @@ async function syncOfflineQueue(showToastNotice = false) {
     try {
       const dailyCheckup = guestMode
         ? await loadGuestDailyStatus()
-        : isEmployeeAccount()
+        : isSelfCheckupAccount()
           ? await loadAuthenticatedDailyCheckup(currentEmployeeId)
           : null;
       if (dailyCheckup) showDailyCheckupStatus(dailyCheckup);
@@ -2160,12 +2432,26 @@ async function loadEmployees() {
   updateEmployeeOptions();
 
   const ownEmployee = employees.find((employee) => employee.id === currentEmployeeId);
-  if (!isAdmin() && ownEmployee) {
+  if (isLinkedAdminHrCheckupAccount() && ownEmployee) {
     departmentSelect.value = ownEmployee.department_id;
     updateEmployeeOptions();
     employeeSelect.value = ownEmployee.id;
-    departmentSelect.disabled = isDepartmentRepresentative();
-    employeeSelect.disabled = isDepartmentRepresentative();
+    departmentSelect.disabled = true;
+    employeeSelect.disabled = true;
+    syncEmployeeListUI(ownEmployee.id);
+    document.querySelector("#checkup-identity-controls").classList.add("hidden");
+    document.querySelector("#checkup-identity-name").textContent = ownEmployee.full_name;
+    document.querySelector("#checkup-identity-department").textContent =
+      departments.find((department) => department.id === ownEmployee.department_id)?.name ?? "—";
+    document.querySelector("#checkup-identity-summary").classList.remove("hidden");
+    document.querySelector("#checkup-identity-summary").classList.add("flex");
+    document.querySelector("#edit-checkup-identity").classList.add("hidden");
+  } else if (!isAdmin() && ownEmployee) {
+    departmentSelect.value = ownEmployee.department_id;
+    updateEmployeeOptions();
+    employeeSelect.value = ownEmployee.id;
+    departmentSelect.disabled = isCheckupIdentityLocked();
+    employeeSelect.disabled = isCheckupIdentityLocked();
     syncEmployeeListUI(ownEmployee.id);
     if (isDepartmentRepresentative()) {
       document.querySelector("#checkup-identity-controls").classList.add("hidden");
@@ -2186,8 +2472,8 @@ async function loadEmployees() {
     document.querySelector("#checkup-identity-summary").classList.add("hidden");
     document.querySelector("#checkup-identity-summary").classList.remove("flex");
     document.querySelector("#edit-checkup-identity").classList.remove("hidden");
-    departmentSelect.disabled = isDepartmentRepresentative();
-    employeeSelect.disabled = isDepartmentRepresentative();
+    departmentSelect.disabled = isCheckupIdentityLocked();
+    employeeSelect.disabled = isCheckupIdentityLocked();
     if (employees.some((employee) => employee.id === selectedEmployee && employee.department_id === departmentSelect.value)) {
       employeeSelect.value = selectedEmployee;
       syncEmployeeListUI(selectedEmployee);
@@ -2212,7 +2498,7 @@ async function loadCheckups() {
   historyList.innerHTML = '<div class="empty-state">Memuat riwayat…</div>';
   let query = client
     .from("checkups")
-    .select("id, employee_id, checked_at, systolic, diastolic, temperature_c, fatigue_level, sleep_quality, symptoms, notes, readiness_status, location_latitude, location_longitude, location_accuracy_m, location_captured_at, employees!inner(full_name, department_id, departments(name))")
+    .select("id, employee_id, checked_at, systolic, diastolic, temperature_c, fatigue_level, sleep_quality, symptoms, notes, measurement_provider, readiness_status, location_latitude, location_longitude, location_accuracy_m, location_captured_at, employees!inner(full_name, department_id, departments(name))")
     .order("checked_at", { ascending: false })
     .limit(1000);
 
@@ -2244,6 +2530,10 @@ async function loadCheckups() {
 }
 
 async function loadDailyCoverage() {
+  employeesWithoutTodayCheckup = null;
+  document.querySelector("#stat-missing-dcu").textContent = "—";
+  document.querySelector("#missing-dcu-card").disabled = true;
+  if (missingDcuModal.open) renderMissingDcuModal();
   const { start, end } = getDateRange();
   const departmentId = isDepartmentRepresentative() ? currentDepartmentId : null;
   const checkupSelect = departmentId ? "id, employees!inner(department_id)" : "id";
@@ -2260,7 +2550,7 @@ async function loadDailyCoverage() {
     checkupQuery = checkupQuery.eq("employees.department_id", departmentId);
     employeeQuery = employeeQuery.eq("department_id", departmentId);
   }
-  const [checkupResult, employeeResult, readinessCountEntries] = await Promise.all([
+  const [checkupResult, employeeResult, readinessCountEntries, missingEmployees] = await Promise.all([
     checkupQuery,
     employeeQuery,
     Promise.all(Object.keys(statusDetails).map(async (status) => {
@@ -2274,13 +2564,53 @@ async function loadDailyCoverage() {
       const result = await query;
       if (result.error) throw result.error;
       return [status, result.count ?? 0];
-    }))
+    })),
+    loadEmployeesWithoutTodayCheckup(start, end, departmentId)
   ]);
   if (checkupResult.error) throw checkupResult.error;
   if (employeeResult.error) throw employeeResult.error;
   todayCheckupCount = checkupResult.count ?? 0;
   activeEmployeeCount = employeeResult.count ?? 0;
   todayReadinessCounts = Object.fromEntries(readinessCountEntries);
+  employeesWithoutTodayCheckup = missingEmployees;
+}
+
+async function loadEmployeesWithoutTodayCheckup(start, end, departmentId) {
+  const pageSize = 1000;
+  const activeEmployees = [];
+  for (let offset = 0; ; offset += pageSize) {
+    let query = client
+      .from("employees")
+      .select("id, department_id, full_name, employment_status, work_pattern")
+      .eq("is_active", true)
+      .order("full_name")
+      .order("id")
+      .range(offset, offset + pageSize - 1);
+    if (departmentId) query = query.eq("department_id", departmentId);
+    const { data, error } = await query;
+    if (error) throw error;
+    activeEmployees.push(...(data ?? []));
+    if (!data || data.length < pageSize) break;
+  }
+
+  const checkedEmployeeIds = new Set();
+  for (let offset = 0; ; offset += pageSize) {
+    const select = departmentId ? "id, employee_id, employees!inner(department_id)" : "id, employee_id";
+    let query = client
+      .from("checkups")
+      .select(select)
+      .gte("checked_at", start)
+      .lt("checked_at", end)
+      .order("id")
+      .range(offset, offset + pageSize - 1);
+    if (departmentId) query = query.eq("employees.department_id", departmentId);
+    const { data, error } = await query;
+    if (error) throw error;
+    for (const checkup of data ?? []) checkedEmployeeIds.add(checkup.employee_id);
+    if (!data || data.length < pageSize) break;
+  }
+
+  return activeEmployees.filter((employee) => !checkedEmployeeIds.has(employee.id));
 }
 
 function renderHistory() {
@@ -2318,6 +2648,7 @@ function renderHistory() {
         <p><span class="block text-slate-400">Kelelahan / tidur</span><b class="mt-1 block text-slate-700">${checkup.fatigue_level} / ${checkup.sleep_quality}</b></p>
       </div>
       ${symptoms.length ? `<p class="mt-3 text-xs leading-5 text-slate-500"><b class="text-slate-600">Gejala:</b> ${escapeHtml(symptoms.join(", "))}</p>` : ""}
+      ${checkup.measurement_provider ? `<p class="mt-2 text-xs leading-5 text-slate-500"><b class="text-slate-600">Tenaga medis:</b> ${escapeHtml(checkup.measurement_provider)}</p>` : ""}
       ${checkup.notes ? `<p class="mt-2 whitespace-pre-wrap break-words text-xs leading-5 text-slate-500">${escapeHtml(checkup.notes)}</p>` : ""}
       ${locationDetails}
     </article>`;
@@ -2357,6 +2688,67 @@ function renderSummary() {
   document.querySelector("#stat-fit").textContent = String(counts.fit);
   document.querySelector("#stat-observe").textContent = String(counts.observe);
   document.querySelector("#stat-rest").textContent = String(counts.rest);
+  const missingDcuCard = document.querySelector("#missing-dcu-card");
+  missingDcuCard.classList.toggle("hidden", !isSummaryViewer());
+  missingDcuCard.disabled = !isSummaryViewer() || employeesWithoutTodayCheckup === null;
+  const missingDepartmentLabel = document.querySelector("#stat-missing-department");
+  missingDepartmentLabel.textContent = isDepartmentRepresentative() && departmentName
+    ? ` — ${departmentName}`
+    : "";
+  missingDepartmentLabel.classList.toggle("hidden", !isDepartmentRepresentative() || !departmentName);
+  document.querySelector("#stat-missing-dcu").textContent = employeesWithoutTodayCheckup === null
+    ? "—"
+    : String(employeesWithoutTodayCheckup.length);
+  if (missingDcuModal.open && employeesWithoutTodayCheckup !== null) renderMissingDcuModal();
+}
+
+function renderMissingDcuModal() {
+  const list = document.querySelector("#missing-dcu-list");
+  const exportButton = document.querySelector("#export-missing-dcu-csv");
+  const departmentFilterWrap = document.querySelector("#missing-dcu-department-filter-wrap");
+  const departmentFilter = document.querySelector("#missing-dcu-department-filter");
+  const isLoaded = employeesWithoutTodayCheckup !== null;
+  const canFilterByDepartment = isAdmin();
+  departmentFilterWrap.classList.toggle("hidden", !canFilterByDepartment);
+  if (canFilterByDepartment) {
+    const hasSelectedDepartment = departments.some((department) => department.id === selectedMissingDcuDepartmentId);
+    if (selectedMissingDcuDepartmentId && !hasSelectedDepartment) selectedMissingDcuDepartmentId = "";
+    departmentFilter.innerHTML = '<option value="">Semua departemen</option>' + departments.map((department) =>
+      `<option value="${escapeHtml(department.id)}">${escapeHtml(department.name)}</option>`
+    ).join("");
+    departmentFilter.value = selectedMissingDcuDepartmentId;
+  }
+  const missingEmployees = getFilteredMissingDcuEmployees();
+  const departmentsById = new Map(departments.map((department) => [department.id, department.name]));
+
+  document.querySelector("#missing-dcu-date").textContent = getAppToday();
+  document.querySelector("#missing-dcu-count").textContent = isLoaded ? String(missingEmployees.length) : "—";
+  exportButton.disabled = !isLoaded || missingEmployees.length === 0;
+  list.innerHTML = !isLoaded
+    ? '<div class="empty-state">Memuat daftar karyawan…</div>'
+    : missingEmployees.length
+    ? missingEmployees.map((employee) => `<div class="flex items-center justify-between gap-3 rounded-xl border border-slate-200 px-3 py-2.5">
+        <span class="min-w-0 truncate text-sm font-semibold text-slate-800">${escapeHtml(employee.full_name)}</span>
+        <span class="shrink-0 text-right text-xs text-slate-500">${escapeHtml(departmentsById.get(employee.department_id) ?? "—")}</span>
+      </div>`).join("")
+    : '<div class="empty-state">Semua karyawan aktif telah melakukan DCU hari ini.</div>';
+  refreshIcons();
+}
+
+function getFilteredMissingDcuEmployees() {
+  const missingEmployees = employeesWithoutTodayCheckup ?? [];
+  if (!isAdmin() || !selectedMissingDcuDepartmentId) return missingEmployees;
+  return missingEmployees.filter((employee) => employee.department_id === selectedMissingDcuDepartmentId);
+}
+
+function openMissingDcuModal() {
+  if (employeesWithoutTodayCheckup === null) {
+    showToast("Daftar karyawan belum tersedia. Coba muat ulang Ringkasan.", true);
+    return;
+  }
+  selectedMissingDcuDepartmentId = "";
+  renderMissingDcuModal();
+  missingDcuModal.showModal();
 }
 
 function collectCheckup() {
@@ -2364,14 +2756,17 @@ function collectCheckup() {
     [...checkupForm.querySelectorAll('input[name="symptoms"]')].map((input) => [input.value, input.checked])
   );
   return {
-    employee_id: isDepartmentRepresentative() ? currentEmployeeId : employeeSelect.value,
+    employee_id: isCheckupIdentityLocked() ? currentEmployeeId : employeeSelect.value,
     systolic: Number(document.querySelector("#systolic").value),
     diastolic: Number(document.querySelector("#diastolic").value),
     temperature_c: Number(document.querySelector("#temperature").value),
     fatigue_level: Number(checkupForm.querySelector('input[name="fatigue_level"]:checked')?.value),
     sleep_quality: Number(checkupForm.querySelector('input[name="sleep_quality"]:checked')?.value),
     symptoms,
-    notes: document.querySelector("#notes").value.trim() || null
+    notes: document.querySelector("#notes").value.trim() || null,
+    measurement_provider: measurementProviderEnabled
+      ? document.querySelector("#measurement-provider").value.trim() || null
+      : null
   };
 }
 
@@ -2390,6 +2785,7 @@ function reportText(payload, status, checkedAt, employeeName, departmentName) {
     `Kelelahan: ${payload.fatigue_level}/5`,
     `Kualitas tidur: ${payload.sleep_quality}/5`,
     `Gejala: ${symptomNames.length ? symptomNames.join(", ") : "Tidak ada yang dipilih"}`,
+    payload.measurement_provider ? `Tenaga medis: ${payload.measurement_provider}` : "",
     payload.notes ? `Catatan: ${payload.notes}` : "",
     "_Hasil ini bukan diagnosis medis._"
   ].filter(Boolean).join("\n");
@@ -2472,9 +2868,17 @@ async function dispatchWhatsAppNotification(checkupId, employeePhone) {
 
 async function submitCheckup(event) {
   event.preventDefault();
+  if (!guestMode && isAdmin() && !isLinkedAdminHrCheckupAccount()) {
+    showToast("Menu Checkup tidak aktif untuk akun ini.", true);
+    return;
+  }
   if (checkupConfirmModal.open) return;
-  if (!validateStep(1) || !validateStep(2)) {
-    setActiveStep(activeStep === 1 ? 1 : 2);
+  if (!validateStep(1)) {
+    setActiveStep(1);
+    return;
+  }
+  if (!validateStep(2)) {
+    setActiveStep(2);
     return;
   }
 
@@ -2493,7 +2897,8 @@ async function submitCheckup(event) {
   if (!confirmed) return;
 
   const payload = collectCheckup();
-  const button = document.querySelector("#submit-checkup");
+  const button = event.submitter
+    ?? document.querySelector(measurementProviderEnabled ? "#submit-checkup-final" : "#submit-checkup");
   setBusy(button, true, "Menyimpan…");
 
   if (checkupLocationEnabled) {
@@ -2505,6 +2910,7 @@ async function submitCheckup(event) {
   const handleOfflineSubmission = async () => {
     const preliminaryStatus = evaluateReadiness(payload);
     const measuredAt = new Date().toISOString();
+    const checkupPhone = document.querySelector("#checkup-whatsapp").value;
     const employeePhone = guestMode
       ? (guestProfile?.whatsapp || document.querySelector("#checkup-whatsapp")?.value || "")
       : "";
@@ -2524,8 +2930,11 @@ async function submitCheckup(event) {
     showResult(payload, preliminaryStatus, measuredAt, true);
 
     checkupForm.reset();
-    departmentSelect.disabled = isDepartmentRepresentative();
-    employeeSelect.disabled = isDepartmentRepresentative();
+    if (isLinkedAdminHrCheckupAccount()) {
+      document.querySelector("#checkup-whatsapp").value = checkupPhone;
+    }
+    departmentSelect.disabled = isCheckupIdentityLocked();
+    employeeSelect.disabled = isCheckupIdentityLocked();
     if (!guestMode && currentEmployeeId) {
       const ownEmployee = employees.find((employee) => employee.id === currentEmployeeId);
       if (ownEmployee) {
@@ -2549,7 +2958,7 @@ async function submitCheckup(event) {
         readiness_status: preliminaryStatus,
         is_offline: true
       });
-    } else if (isEmployeeAccount()) {
+    } else if (isSelfCheckupAccount()) {
       showDailyCheckupStatus({
         ...payload,
         checked_at: measuredAt,
@@ -2558,7 +2967,7 @@ async function submitCheckup(event) {
       });
     }
     updateTemperatureDisplay();
-    if (!guestMode && !isEmployeeAccount()) setActiveStep(1);
+    if (!guestMode && !isSelfCheckupAccount()) setActiveStep(1);
     await updateNetworkAndQueueUI();
     showToast("DCU disimpan di antrean offline. Otomatis dikirim saat online.");
   };
@@ -2588,6 +2997,7 @@ async function submitCheckup(event) {
         p_sleep_quality: payload.sleep_quality,
         p_symptoms: payload.symptoms,
         p_notes: payload.notes,
+        p_measurement_provider: payload.measurement_provider,
         p_location_latitude: payload.location_latitude ?? null,
         p_location_longitude: payload.location_longitude ?? null,
         p_location_accuracy_m: payload.location_accuracy_m ?? null,
@@ -2609,7 +3019,7 @@ async function submitCheckup(event) {
     }
     let canSubmitMore = false;
     let submissionStatusError = null;
-    if (guestMode || isEmployeeAccount()) {
+    if (guestMode || isSelfCheckupAccount()) {
       const { data, error } = await client.rpc("can_submit_additional_dcu", {
         p_employee_id: payload.employee_id,
         p_device_token: guestMode ? guestProfile.deviceToken : null
@@ -2631,9 +3041,13 @@ async function submitCheckup(event) {
     if (checkupId && employeePhone) {
       dispatchWhatsAppNotification(checkupId, employeePhone);
     }
+    const checkupPhone = document.querySelector("#checkup-whatsapp").value;
     checkupForm.reset();
-    departmentSelect.disabled = isDepartmentRepresentative();
-    employeeSelect.disabled = isDepartmentRepresentative();
+    if (isLinkedAdminHrCheckupAccount()) {
+      document.querySelector("#checkup-whatsapp").value = checkupPhone;
+    }
+    departmentSelect.disabled = isCheckupIdentityLocked();
+    employeeSelect.disabled = isCheckupIdentityLocked();
     if (!guestMode && currentEmployeeId) {
       const ownEmployee = employees.find((employee) => employee.id === currentEmployeeId);
       if (ownEmployee) {
@@ -2656,7 +3070,7 @@ async function submitCheckup(event) {
         readiness_status: savedCheckup.readiness_status,
         can_submit_more: canSubmitMore
       });
-    } else if (isEmployeeAccount()) {
+    } else if (isSelfCheckupAccount()) {
       showDailyCheckupStatus({
         ...payload,
         checked_at: savedCheckup.checked_at,
@@ -2665,7 +3079,7 @@ async function submitCheckup(event) {
       });
     }
     updateTemperatureDisplay();
-    if (!guestMode && !isEmployeeAccount()) setActiveStep(1);
+    if (!guestMode && !isSelfCheckupAccount()) setActiveStep(1);
     showToast(submissionStatusError
       ? `Checkup berhasil disimpan, tetapi status batas pengisian berikutnya gagal diperiksa: ${submissionStatusError.message}`
       : "Checkup berhasil disimpan.", Boolean(submissionStatusError));
@@ -2699,7 +3113,7 @@ async function submitCheckup(event) {
         try {
           const dailyCheckup = guestMode
             ? await loadGuestDailyStatus()
-            : isEmployeeAccount()
+            : isSelfCheckupAccount()
               ? await loadAuthenticatedDailyCheckup(payload.employee_id)
               : null;
           if (dailyCheckup) showDailyCheckupStatus(dailyCheckup);
@@ -2876,11 +3290,23 @@ function csvCell(value) {
   return `"${safeText.replace(/"/g, '""')}"`;
 }
 
+function downloadCsvRows(rows, filename) {
+  const csv = "\uFEFF" + rows.map((row) => row.map(csvCell).join(",")).join("\r\n");
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 function triggerCsvDownload(items) {
   if (!items?.length) return false;
   const header = [
     "Waktu checkup", "Nama karyawan", "Departemen", "Tekanan sistolik", "Tekanan diastolik",
-    "Suhu (C)", "Kelelahan (1-5)", "Kualitas tidur (1-5)", "Gejala", "Catatan", "Status",
+    "Suhu (C)", "Kelelahan (1-5)", "Kualitas tidur (1-5)", "Gejala", "Tenaga medis", "Catatan", "Status",
     "Latitude", "Longitude", "Akurasi lokasi (m)", "Waktu pengambilan lokasi"
   ];
   const rows = items.map((item) => [
@@ -2893,6 +3319,7 @@ function triggerCsvDownload(items) {
     item.fatigue_level,
     item.sleep_quality,
     Object.entries(item.symptoms ?? {}).filter(([, selected]) => selected).map(([key]) => symptomLabels[key] ?? key).join("; "),
+    item.measurement_provider,
     item.notes,
     statusDetails[item.readiness_status]?.label ?? item.readiness_status,
     item.location_latitude,
@@ -2900,16 +3327,28 @@ function triggerCsvDownload(items) {
     item.location_accuracy_m,
     item.location_captured_at
   ]);
-  const csv = "\uFEFF" + [header, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n");
-  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `daily-checkup-${getAppToday()}.csv`;
-  document.body.append(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  downloadCsvRows([header, ...rows], `daily-checkup-${getAppToday()}.csv`);
   return true;
+}
+
+function exportMissingDcuCsv() {
+  const missingEmployees = getFilteredMissingDcuEmployees();
+  if (!missingEmployees.length) {
+    showToast("Tidak ada karyawan yang perlu diekspor.", true);
+    return;
+  }
+  const departmentsById = new Map(departments.map((department) => [department.id, department.name]));
+  const rows = [
+    ["Nama Karyawan", "Departemen", "Status Pekerja", "Pola Kerja"],
+    ...missingEmployees.map((employee) => [
+      employee.full_name,
+      departmentsById.get(employee.department_id) ?? "",
+      employee.employment_status ?? "",
+      employee.work_pattern ?? ""
+    ])
+  ];
+  downloadCsvRows(rows, `belum-dcu-${getAppToday()}.csv`);
+  showToast("Daftar karyawan belum DCU berhasil diunduh.");
 }
 
 async function exportCsv() {
@@ -2951,7 +3390,8 @@ function setTab(tabName, refreshData = true) {
   ) {
     tabName = "profile";
   }
-  if (!isAdmin() && tabName === "profile" && !guestMode) return;
+  if (!guestMode && tabName === "profile" && (!isAdmin() || !adminHrMenuVisibility.profile)) return;
+  if (!guestMode && tabName === "checkup" && isAdmin() && !isLinkedAdminHrCheckupAccount()) return;
   if (tabName === "settings" && currentProfile?.role !== "admin") return;
   if (tabName === "summary") {
     document.querySelector("#history-readiness").value = "";
@@ -2964,10 +3404,16 @@ function setTab(tabName, refreshData = true) {
   });
   if (guestMode && tabName === "profile") syncGuestProfileForm();
   if (tabName === "settings") {
-    loadAdminSettings().catch((error) => {
-      console.error("Admin settings load failed:", error);
-      showToast(`Gagal memuat pengaturan: ${error.message}`, true);
+    loadAdminHrMenuVisibility().catch((error) => {
+      console.error("Admin/HR menu visibility load failed:", error);
+      showToast(`Gagal memuat visibilitas menu: ${error.message}`, true);
     });
+    if (currentProfile?.role === "admin") {
+      loadAdminSettings().catch((error) => {
+        console.error("Admin settings load failed:", error);
+        showToast(`Gagal memuat pengaturan: ${error.message}`, true);
+      });
+    }
   }
   if (refreshData && (tabName === "history" || tabName === "summary")) {
     loadCheckups().catch((error) => {
@@ -3004,6 +3450,7 @@ async function initializeApp(user) {
   guestStatusRequest += 1;
   guestMode = false;
   guestProfile = null;
+  document.querySelector("#checkup-whatsapp").value = "";
   document.querySelector("#daily-checkup-status-loading").classList.add("hidden");
   document.querySelector("#daily-checkup-completed-notice").classList.add("hidden");
   checkupForm.classList.remove("hidden");
@@ -3011,9 +3458,13 @@ async function initializeApp(user) {
   resultCard.replaceChildren();
   resultCard.classList.add("hidden");
   currentUser = user;
+  loggedInIdentity.textContent = user.email ?? "";
+  loggedInIdentity.classList.toggle("hidden", !user.email);
   adminSettings = [];
   adminSettingsLoaded = false;
-  document.querySelector("#change-password-button").classList.remove("hidden");
+  adminHrMenuVisibility = { profile: true, checkup: true };
+  adminHrMenuVisibilityLoaded = false;
+  linkedAccountEmployeeId = null;
   const signoutButton = document.querySelector("#signout-button");
   signoutButton.innerHTML = '<i data-lucide="log-out"></i>';
   signoutButton.setAttribute("aria-label", "Keluar");
@@ -3036,28 +3487,37 @@ async function initializeApp(user) {
     throw new Error("Akun belum memiliki profil akses. Hubungi administrator.");
   }
   currentProfile = data;
-  document.querySelector('[data-tab-target="profile"]').classList.toggle("hidden", !isAdmin());
-  document.querySelector('[data-tab-target="settings"]').classList.toggle("hidden", currentProfile.role !== "admin");
-  document.querySelector(".bottom-nav").classList.toggle("has-admin-profile", isAdmin());
-  document.querySelector(".bottom-nav").classList.toggle("has-admin-settings", currentProfile.role === "admin");
+  document.querySelector("#change-password-button").classList.remove("hidden");
+  if (isAdmin()) await loadAdminHrMenuVisibility();
+  document.querySelector("#admin-settings-form").classList.toggle("hidden", currentProfile.role !== "admin");
   await syncAppTimezone();
   await syncWhatsAppNotificationSetting();
   await syncCheckupLocationSetting();
+  await syncMeasurementProviderSetting();
+  await syncCheckupPageCountSetting();
   await syncEmployeeDisplayLimit();
   resetCheckupResponses();
   todayCheckupCount = null;
   todayReadinessCounts = null;
   activeEmployeeCount = null;
+  employeesWithoutTodayCheckup = null;
   currentEmployeeId = null;
   currentDepartmentId = null;
+  configureCheckupPhoneField();
+  const employeeResult = await client.rpc("current_employee_id");
+  if (employeeResult.error) throw employeeResult.error;
+  const identityEmployeeId = employeeResult.data;
+  linkedAccountEmployeeId = identityEmployeeId;
   if (isEmployeeAccount()) {
-    const employeeResult = await client.rpc("current_employee_id");
-    if (employeeResult.error) throw employeeResult.error;
-    currentEmployeeId = employeeResult.data;
+    currentEmployeeId = identityEmployeeId;
     if (!currentEmployeeId) {
       throw new Error("Akun belum ditautkan ke data karyawan. Hubungi administrator.");
     }
+  } else if (isAdmin() && adminHrMenuVisibility.checkup) {
+    currentEmployeeId = identityEmployeeId;
   }
+  applyRoleMenuVisibility();
+  configureCheckupPhoneField();
   if (isDepartmentRepresentative()) {
     const departmentResult = await client.rpc("current_department_id");
     if (departmentResult.error) throw departmentResult.error;
@@ -3075,12 +3535,18 @@ async function initializeApp(user) {
   }).format(new Date());
   document.querySelector("#history-department-wrap").classList.toggle("hidden", !isAdmin() && !isDepartmentRepresentative());
   document.querySelector("#daily-coverage-card").classList.toggle("hidden", !isSummaryViewer());
+  document.querySelector("#missing-dcu-card").classList.toggle("hidden", !isSummaryViewer());
 
   await loadDepartments();
   await loadEmployees();
-  if (isAdmin()) restoreCheckupSelection();
+  const identityEmployee = employees.find((employee) => employee.id === identityEmployeeId);
+  loggedInIdentity.textContent = identityEmployee
+    ? `${identityEmployee.full_name}`
+    : (user.email ?? "");
+  loggedInIdentity.classList.toggle("hidden", !loggedInIdentity.textContent);
+  if (isAdmin() && !isLinkedAdminHrCheckupAccount()) restoreCheckupSelection();
   await loadCheckups();
-  if (isEmployeeAccount()) {
+  if (isSelfCheckupAccount()) {
     const dailyCheckup = await loadAuthenticatedDailyCheckup(currentEmployeeId);
     if (dailyCheckup) {
       showDailyCheckupStatus(dailyCheckup);
@@ -3088,14 +3554,12 @@ async function initializeApp(user) {
       const restored = restoreCheckupDraft(currentEmployeeId);
       showCheckupForm(restored ? activeStep : 1);
     }
-  } else if (isAdmin()) {
-    restoreCheckupDraft(employeeSelect.value);
   } else {
     checkupForm.classList.remove("hidden");
     checkupProgress.classList.remove("hidden");
     resultCard.classList.add("hidden");
   }
-  setTab(isSummaryViewer() ? "summary" : "checkup", false);
+  setTab(isLinkedAdminHrCheckupAccount() ? "checkup" : isSummaryViewer() ? "summary" : "checkup", false);
   if (realtimeChannel) await client.removeChannel(realtimeChannel);
   realtimeChannel = client
     .channel("checkup-changes")
@@ -3131,6 +3595,13 @@ async function initializeApp(user) {
 
 async function initializeGuestApp() {
   guestStatusRequest += 1;
+  currentProfile = null;
+  currentEmployeeId = null;
+  linkedAccountEmployeeId = null;
+  adminHrMenuVisibility = { profile: true, checkup: true };
+  adminHrMenuVisibilityLoaded = false;
+  document.querySelector(".bottom-nav").style.removeProperty("grid-template-columns");
+  document.querySelector("#admin-settings-form").classList.add("hidden");
   try {
     if (!navigator.onLine) throw new Error("Offline");
     const { data: enabled, error: settingsError } = await client.rpc("is_guest_checkups_enabled");
@@ -3141,6 +3612,8 @@ async function initializeGuestApp() {
     await syncWhatsAppNotificationSetting();
     await syncAppTimezone();
     await syncCheckupLocationSetting();
+    await syncMeasurementProviderSetting();
+    await syncCheckupPageCountSetting();
     await syncEmployeeDisplayLimit();
 
     guestEmployeeCreationEnabled = false;
@@ -3163,6 +3636,8 @@ async function initializeGuestApp() {
   document.querySelector("#daily-checkup-completed-notice").classList.add("hidden");
   currentUser = null;
   currentProfile = null;
+  loggedInIdentity.textContent = "";
+  loggedInIdentity.classList.add("hidden");
   adminSettings = [];
   adminSettingsLoaded = false;
   currentEmployeeId = null;
@@ -3171,6 +3646,7 @@ async function initializeGuestApp() {
   todayCheckupCount = null;
   todayReadinessCounts = null;
   activeEmployeeCount = null;
+  employeesWithoutTodayCheckup = null;
   checkups = [];
   historyList.replaceChildren();
   document.querySelector("#stat-today-checkups").textContent = "—";
@@ -3181,6 +3657,7 @@ async function initializeGuestApp() {
   document.querySelector("#stat-fit").textContent = "—";
   document.querySelector("#stat-observe").textContent = "—";
   document.querySelector("#stat-rest").textContent = "—";
+  document.querySelector("#stat-missing-dcu").textContent = "—";
   resultCard.replaceChildren();
   resultCard.classList.add("hidden");
   document.querySelector("#change-password-button").classList.add("hidden");
@@ -3211,6 +3688,7 @@ async function initializeGuestApp() {
   document.querySelector(".bottom-nav").classList.remove("has-admin-profile", "has-admin-settings");
   setTab("checkup", false);
   document.querySelector("#daily-coverage-card").classList.add("hidden");
+  document.querySelector("#missing-dcu-card").classList.add("hidden");
   appShell.classList.add("guest-mode");
   document.querySelector("#profile-add-employee").disabled =
     !ALLOW_GUEST_EMPLOYEE_CREATION || !guestEmployeeCreationEnabled;
@@ -3252,6 +3730,9 @@ async function initializeGuestApp() {
 
 async function showLogin() {
   appShell.classList.add("hidden");
+  document.querySelector("#change-password-button").classList.add("hidden");
+  loggedInIdentity.textContent = "";
+  loggedInIdentity.classList.add("hidden");
   loginScreen.classList.remove("hidden");
   loginScreen.classList.add("flex");
   document.querySelector("#guest-mode-button").classList.toggle("hidden", !ALLOW_GUEST_CHECKUPS);
@@ -3318,6 +3799,7 @@ function bindEvents() {
   });
   document.querySelector("#change-password-form").addEventListener("submit", handlePasswordChange);
   document.querySelector("#admin-settings-form").addEventListener("submit", handleAdminSettingsSave);
+  document.querySelector("#menu-visibility-form").addEventListener("submit", handleMenuVisibilitySave);
   document.querySelector("#reload-admin-settings").addEventListener("click", () => {
     loadAdminSettings(true).catch((error) => {
       console.error("Admin settings reload failed:", error);
@@ -3338,7 +3820,7 @@ function bindEvents() {
   document.querySelectorAll("[data-next]").forEach((button) => {
     button.addEventListener("click", () => {
       if (validateStep(activeStep)) {
-        setActiveStep(Math.min(3, activeStep + 1));
+        setActiveStep(Math.min(getLastCheckupStep(), activeStep + 1));
         saveCheckupDraft();
       }
     });
@@ -3583,6 +4065,17 @@ function bindEvents() {
   document.querySelectorAll("[data-summary-filter]").forEach((card) => {
     card.addEventListener("click", () => openSummaryFilter(card.dataset.summaryFilter));
   });
+  document.querySelector("#missing-dcu-card").addEventListener("click", openMissingDcuModal);
+  document.querySelector("#close-missing-dcu-modal").addEventListener("click", () => missingDcuModal.close());
+  document.querySelector("#cancel-missing-dcu-modal").addEventListener("click", () => missingDcuModal.close());
+  missingDcuModal.addEventListener("click", (event) => {
+    if (event.target === missingDcuModal) missingDcuModal.close();
+  });
+  document.querySelector("#export-missing-dcu-csv").addEventListener("click", exportMissingDcuCsv);
+  document.querySelector("#missing-dcu-department-filter").addEventListener("change", (event) => {
+    selectedMissingDcuDepartmentId = event.currentTarget.value;
+    renderMissingDcuModal();
+  });
   document.querySelector("#close-checkup-confirm-modal")?.addEventListener("click", () => checkupConfirmModal.close());
   document.querySelector("#cancel-checkup-submit")?.addEventListener("click", () => checkupConfirmModal.close());
   checkupConfirmModal?.addEventListener("click", (event) => {
@@ -3689,6 +4182,8 @@ async function boot() {
   }
   await syncAppTimezone();
   await syncCheckupLocationSetting();
+  await syncMeasurementProviderSetting();
+  await syncCheckupPageCountSetting();
   await syncEmployeeDisplayLimit();
 
   client.auth.onAuthStateChange((_event, session) => {

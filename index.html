@@ -92,15 +92,15 @@
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-3">
             <div class="brand-mark small"><i data-lucide="heart-pulse"></i></div>
-            <div>
+            <div class="min-w-0">
               <p class="font-display text-base font-extrabold tracking-tight text-slate-900">Daily Checkup</p>
-              <p id="today-label" class="text-xs text-slate-500"></p>
+              <p id="today-label" class="text-[11px] text-slate-500"></p>
+              <p id="logged-in-identity" class="hidden max-w-[190px] truncate text-[11px] font-semibold text-slate-600" aria-label="Identitas pengguna yang masuk"></p>
             </div>
           </div>
           <div class="flex items-center gap-2">
             <button id="offline-queue-badge" class="sync-badge hidden" type="button" aria-label="Status antrean offline" title="Status koneksi dan antrean">
-              <span id="sync-icon"><i data-lucide="wifi" class="h-3.5 w-3.5 text-emerald-600"></i></span>
-              <span id="sync-text">Online</span>
+              <span id="sync-icon"><i data-lucide="wifi" class="text-emerald-600"></i></span>
               <span id="queue-count" class="queue-count-pill hidden">0</span>
             </button>
             <button id="manual-sync-button" class="icon-button hidden" type="button" aria-label="Sinkronkan antrean" title="Sinkronkan data offline"><i data-lucide="refresh-cw"></i></button>
@@ -176,15 +176,15 @@
               <p id="employee-hint" class="mt-2 text-xs leading-5 text-slate-500"></p>
               </div>
               <div id="checkup-whatsapp-wrap" class="mt-4 hidden">
-                <label class="field-label" for="checkup-whatsapp">Nomor WhatsApp</label>
+                <label class="field-label" for="checkup-whatsapp">Nomor HP/WhatsApp</label>
                 <input id="checkup-whatsapp" class="field-input mt-2" type="tel" inputmode="tel" autocomplete="tel" maxlength="24" placeholder="Contoh: 081234567890">
-                <p class="mt-1 text-xs text-slate-500">Disimpan hanya di browser/perangkat ini untuk checkup berikutnya.</p>
+                <p class="mt-1 text-xs text-slate-500">Nomor wajib diisi sebelum checkup. Untuk profil pengunjung, nomor hanya disimpan di browser/perangkat ini.</p>
               </div>
             </div>
             <button class="primary-button w-full" type="button" data-next>Selanjutnya <i data-lucide="arrow-right"></i></button>
           </section>
 
-          <section class="checkup-step hidden space-y-4" data-step="2">
+          <section id="checkup-physical-step" class="checkup-step hidden space-y-4" data-step="2">
             <div class="panel-card">
               <div class="mb-4 flex items-center gap-2"><i data-lucide="activity" class="section-icon"></i><h2 class="section-title">Kondisi fisik & vital</h2></div>
               <p class="field-label">Tekanan darah <span class="font-normal text-slate-400">(mmHg)</span></p>
@@ -219,13 +219,13 @@
                 </div>
               </fieldset>
             </div>
-            <div class="grid grid-cols-2 gap-3">
-              <button class="secondary-button" type="button" data-prev><i data-lucide="arrow-left"></i> Kembali</button>
+            <div id="checkup-step2-navigation" class="grid grid-cols-2 gap-3">
+              <button id="checkup-step2-prev" class="secondary-button" type="button" data-prev><i data-lucide="arrow-left"></i> Kembali</button>
               <button class="primary-button" type="button" data-next>Selanjutnya <i data-lucide="arrow-right"></i></button>
             </div>
           </section>
 
-          <section class="checkup-step hidden space-y-4" data-step="3">
+          <section id="checkup-symptoms-step" class="checkup-step hidden space-y-4" data-step="3">
             <div class="panel-card">
               <div class="mb-1 flex items-center gap-2"><i data-lucide="list-checks" class="section-icon"></i><h2 class="section-title">Gejala & kesiapan</h2></div>
               <div class="symptom-list mb-4">
@@ -245,15 +245,32 @@
               <div class="symptom-list">
                 <label class="symptom-row fit-symptom-row"><span><b>Sehat / Fit <span class="fit-self-assessment">PENILAIAN DIRI</span></b><small>Apakah Anda merasa sehat dan siap beraktivitas?</small></span><input type="checkbox" name="symptoms" value="fit" class="toggle-input" aria-label="Sehat atau fit: Ya atau Tidak"></label>
               </div>
-              <label class="field-label mt-5 block" for="notes">Catatan tambahan <span class="font-normal text-slate-400">(opsional)</span></label>
-              <textarea id="notes" class="field-input mt-2 min-h-24 resize-y" maxlength="1000" placeholder="Tambahkan catatan bila diperlukan..."></textarea>
+              <label class="field-label mt-5 block" for="notes">Keluhan lain <span class="font-normal text-slate-400">(opsional)</span></label>
+              <textarea id="notes" class="field-input mt-2 min-h-24 resize-y" maxlength="1000" placeholder="Tambahkan keluhan lain bila ada..."></textarea>
             </div>
-            <div class="grid grid-cols-2 gap-3">
-              <button class="secondary-button" type="button" data-prev><i data-lucide="arrow-left"></i> Kembali</button>
+            <div id="checkup-step3-navigation" class="grid grid-cols-2 gap-3">
+              <button id="checkup-step3-prev" class="secondary-button" type="button" data-prev><i data-lucide="arrow-left"></i> Kembali</button>
+              <button id="checkup-step3-next" class="primary-button hidden" type="button" data-next>Selanjutnya <i data-lucide="arrow-right"></i></button>
               <button id="submit-checkup" class="primary-button" type="submit">Simpan checkup <i data-lucide="check"></i></button>
             </div>
             <p id="checkup-location-notice" class="hidden px-1 text-center text-xs leading-5 text-slate-500" role="note">Lokasi perangkat akan diminta saat checkup dikirim. Jika izin ditolak atau lokasi tidak tersedia, checkup tetap dapat dikirim tanpa koordinat.</p>
             <p class="px-1 text-center text-xs leading-5 text-slate-500">Hasil merupakan panduan operasional, bukan diagnosis medis.</p>
+          </section>
+
+          <div id="measurement-provider-step-anchor" hidden></div>
+          <section id="measurement-provider-step" class="checkup-step hidden space-y-4" data-step="4">
+            <div class="panel-card">
+              <div class="mb-4 flex items-center gap-2"><i data-lucide="stethoscope" class="section-icon"></i><h2 class="section-title">Tenaga medis</h2></div>
+              <label class="field-label" for="measurement-provider">Tenaga medis yang melakukan pengukuran <span class="font-normal text-slate-400">(opsional)</span></label>
+              <select id="measurement-provider" class="field-input mt-2">
+                <option value="">Pilih tenaga medis</option>
+              </select>
+              <p id="measurement-provider-empty" class="mt-2 hidden text-xs leading-5 text-slate-500">Daftar tenaga medis belum dikonfigurasi. DCU tetap dapat disimpan tanpa pilihan.</p>
+            </div>
+            <div id="measurement-provider-navigation" class="grid grid-cols-2 gap-3">
+              <button id="measurement-provider-prev" class="secondary-button" type="button" data-prev><i data-lucide="arrow-left"></i> Kembali</button>
+              <button id="submit-checkup-final" class="primary-button" type="submit">Simpan checkup <i data-lucide="check"></i></button>
+            </div>
           </section>
         </form>
         <section id="result-card" class="panel-card mt-5 hidden" aria-live="polite"></section>
@@ -313,6 +330,11 @@
               </div>
             </div>
           </button>
+          <button id="missing-dcu-card" class="stat-card summary-filter-card w-full text-left" type="button" aria-label="Lihat karyawan yang belum melakukan DCU hari ini" disabled>
+            <span class="stat-icon amber"><i data-lucide="user-round-x"></i></span>
+            <p class="stat-label">Belum DCU<span id="stat-missing-department" class="hidden"></span></p>
+            <p id="stat-missing-dcu" class="stat-value">—</p>
+          </button>
           <button class="stat-card summary-filter-card w-full text-left" data-summary-filter="fit_to_work" type="button" aria-label="Lihat riwayat Fit to Work"><span class="stat-icon green"><i data-lucide="shield-check"></i></span><p class="stat-label">Fit to Work</p><p id="stat-fit" class="stat-value">—</p></button>
           <button class="stat-card summary-filter-card w-full text-left" data-summary-filter="need_observation" type="button" aria-label="Lihat riwayat yang perlu observasi"><span class="stat-icon amber"><i data-lucide="eye"></i></span><p class="stat-label">Perlu observasi</p><p id="stat-observe" class="stat-value">—</p></button>
           <button class="stat-card summary-filter-card w-full text-left" data-summary-filter="rest_recommended" type="button" aria-label="Lihat riwayat istirahat disarankan"><span class="stat-icon rose"><i data-lucide="heart-pulse"></i></span><p class="stat-label">Istirahat disarankan</p><p id="stat-rest" class="stat-value">—</p></button>
@@ -369,9 +391,28 @@
         <div class="mb-5">
           <p class="eyebrow">ADMINISTRASI</p>
           <h1 id="settings-heading" class="mt-1 font-display text-2xl font-extrabold tracking-tight text-slate-900">Pengaturan aplikasi</h1>
-          <p class="mt-1 text-sm leading-5 text-slate-500">Ubah konfigurasi yang diizinkan untuk admin. Perubahan disimpan ke Supabase.</p>
+          <p class="mt-1 text-sm leading-5 text-slate-500">Atur visibilitas menu Profile dan Checkup untuk semua akun Admin/HR.</p>
         </div>
-        <form id="admin-settings-form" class="space-y-3">
+        <form id="menu-visibility-form" class="mb-5 space-y-3">
+          <div class="panel-card">
+            <label class="flex items-center justify-between gap-3">
+              <span class="field-label">Tampilkan menu Profile</span>
+              <input id="menu-profile-visible" class="toggle-input" type="checkbox">
+            </label>
+          </div>
+          <div class="panel-card">
+            <label class="flex items-center justify-between gap-3">
+              <span class="field-label">Tampilkan menu Checkup untuk akun yang terhubung ke karyawan</span>
+              <input id="menu-checkup-visible" class="toggle-input" type="checkbox">
+            </label>
+          </div>
+          <button id="save-menu-visibility" class="primary-button w-full" type="submit"><i data-lucide="save"></i> Simpan visibilitas menu</button>
+        </form>
+        <form id="admin-settings-form" class="hidden space-y-3">
+          <div class="mb-3">
+            <h2 class="font-display text-lg font-bold text-slate-900">Pengaturan admin</h2>
+            <p class="mt-1 text-sm leading-5 text-slate-500">Konfigurasi lain hanya dapat diubah oleh admin.</p>
+          </div>
           <div id="admin-settings-fields" class="space-y-3">
             <p class="panel-card text-sm text-slate-500">Memuat pengaturan…</p>
           </div>
@@ -494,6 +535,32 @@
           <button id="cancel-export-modal" class="w-full py-1 text-center text-xs font-semibold text-slate-400 hover:text-slate-600" type="button">
             Batal
           </button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog id="missing-dcu-modal" class="modal" aria-labelledby="missing-dcu-title">
+      <div class="modal-card">
+        <div class="mb-4 flex items-start justify-between">
+          <div class="min-w-0 pr-3">
+            <p class="eyebrow">PANTAUAN DCU</p>
+            <h2 id="missing-dcu-title" class="mt-1 font-display text-xl font-extrabold text-slate-900">Belum melakukan DCU</h2>
+            <p class="mt-1 text-xs text-slate-500">Daftar tanggal <span id="missing-dcu-date"></span></p>
+          </div>
+          <button id="close-missing-dcu-modal" class="icon-button" type="button" aria-label="Tutup"><i data-lucide="x"></i></button>
+        </div>
+
+        <label id="missing-dcu-department-filter-wrap" class="mb-3 block hidden" for="missing-dcu-department-filter">
+          <span class="field-label">Departemen</span>
+          <select id="missing-dcu-department-filter" class="field-input mt-2">
+            <option value="">Semua departemen</option>
+          </select>
+        </label>
+        <p class="mb-3 text-sm text-slate-600"><b id="missing-dcu-count" class="text-slate-900">0</b> karyawan belum melakukan DCU.</p>
+        <div id="missing-dcu-list" class="mb-4 max-h-72 space-y-2 overflow-y-auto"></div>
+        <div class="space-y-2">
+          <button id="export-missing-dcu-csv" class="primary-button w-full justify-center" type="button" disabled><i data-lucide="file-down"></i> Ekspor daftar CSV</button>
+          <button id="cancel-missing-dcu-modal" class="w-full py-1 text-center text-xs font-semibold text-slate-400 hover:text-slate-600" type="button">Tutup</button>
         </div>
       </div>
     </dialog>
