@@ -2,11 +2,12 @@
  * sw.js - Service Worker untuk Offline-First Shell Daily Checkup
  */
 
-const CACHE_NAME = "sgt-dcu-cache-v7";
+const CACHE_NAME = "sgt-dcu-cache-v8";
 
 const STATIC_ASSETS = [
   "./",
   "./index.html",
+  "./favicon.svg",
   "./tailwind.min.css",
   "./style.css",
   "./config.js",
