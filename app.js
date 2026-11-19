@@ -978,8 +978,8 @@ function reportDraftStorageError(action, error) {
 }
 
 function resetCheckupResponses() {
-  document.querySelector("#systolic").value = "";
-  document.querySelector("#diastolic").value = "";
+  document.querySelector("#systolic").value = "90";
+  document.querySelector("#diastolic").value = "70";
   document.querySelector("#temperature").value = "36.5";
   document.querySelector("#notes").value = "";
   document.querySelector("#measurement-provider").value = "";
@@ -1682,11 +1682,11 @@ function updateTemperatureDisplay() {
   const value = document.querySelector("#temperature-value");
   const hint = document.querySelector("#temperature-hint");
   value.textContent = `${temperature.toFixed(1)}°C`;
-  value.className = temperature > 37.5
+  value.className = temperature > 38
     ? "rounded-lg bg-rose-50 px-2.5 py-1 text-sm font-bold text-rose-700"
     : "rounded-lg bg-blue-50 px-2.5 py-1 text-sm font-bold text-blue-700";
-  hint.textContent = temperature > 37.5
-    ? "Suhu di atas 37,5°C — hasil akan memerlukan observasi."
+  hint.textContent = temperature > 38
+    ? "Suhu di atas 38°C — hasil akan memerlukan observasi."
     : "Geser untuk memilih suhu tubuh.";
 }
 
