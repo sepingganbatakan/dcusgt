@@ -69,6 +69,8 @@ let guestMode = false;
 let guestEmployeeCreationEnabled = false;
 let guestProfile = null;
 let departments = [];
+let subdepartments = [];
+let subdepartmentSupervisors = [];
 let employees = [];
 let checkups = [];
 let todayCheckupCount = null;
@@ -863,14 +865,14 @@ function applyRoleMenuVisibility() {
   const bottomNav = document.querySelector(".bottom-nav");
   profileButton.classList.toggle("hidden", !guestMode && (!isAdmin() || !adminHrMenuVisibility.profile));
   checkupButton.classList.toggle("hidden", !guestMode && isAdmin() && !isLinkedAdminHrCheckupAccount());
-  settingsButton.classList.toggle("hidden", currentProfile?.role !== "admin");
+  settingsButton.classList.toggle("hidden", !isAdmin());
   bottomNav.classList.toggle(
     "has-admin-profile",
     !profileButton.classList.contains("hidden") && isAdmin()
   );
   bottomNav.classList.toggle(
     "has-admin-settings",
-    currentProfile?.role === "admin"
+    isAdmin()
   );
   const visibleMenuCount = [...bottomNav.querySelectorAll(".nav-item")]
     .filter((button) => !button.classList.contains("hidden"))
@@ -884,6 +886,13 @@ function normalizeWhatsApp(value) {
   if (digits.startsWith("0")) return `+62${digits.slice(1)}`;
   if (digits.startsWith("62")) return `+${digits}`;
   return digits ? `+${digits}` : "";
+}
+
+function normalizeSupervisorPhone(value) {
+  let digits = String(value ?? "").replace(/\D/g, "");
+  if (digits.startsWith("0")) digits = `62${digits.slice(1)}`;
+  else if (digits.startsWith("8")) digits = `62${digits}`;
+  return digits;
 }
 
 function createDeviceToken() {
@@ -1547,6 +1556,14 @@ function openEmployeeModal(departmentId, canAddAsGuest) {
   document.querySelector("#employee-modal-title").textContent = canAddAsGuest ? "Tambahkan nama Anda" : "Tambah karyawan";
   document.querySelector("#guest-employee-note").classList.toggle("hidden", !canAddAsGuest);
   document.querySelector("#new-employee-active-wrap").classList.toggle("hidden", canAddAsGuest);
+  document.querySelector("#new-employee-subdepartment-wrap").classList.toggle("hidden", canAddAsGuest);
+  document.querySelector("#new-employee-subdepartment").classList.toggle("hidden", canAddAsGuest);
+  populateSubdepartmentSelect(
+    document.querySelector("#new-employee-subdepartment"),
+    departmentId,
+    "",
+    "Tanpa subdepartemen"
+  );
   const departmentName = departments.find((department) => department.id === departmentId)?.name ?? "";
   document.querySelector("#new-employee-department").textContent = `Departemen: ${departmentName}`;
   employeeModal.showModal();
@@ -2204,6 +2221,229 @@ async function loadDepartments() {
 
   renderDepartmentTabs();
   renderProfileDepartmentTabs();
+  renderSubdepartmentControls();
+}
+
+function subdepartmentsForDepartment(departmentId) {
+  return subdepartments.filter((subdepartment) => subdepartment.department_id === departmentId);
+}
+
+function populateSubdepartmentSelect(select, departmentId, selectedId = "", emptyLabel = "Tanpa subdepartemen") {
+  if (!select) return;
+  select.replaceChildren(new Option(emptyLabel, ""));
+  for (const subdepartment of subdepartmentsForDepartment(departmentId)) {
+    select.add(new Option(subdepartment.name, subdepartment.id));
+  }
+  if (subdepartmentsForDepartment(departmentId).some((subdepartment) => subdepartment.id === selectedId)) {
+    select.value = selectedId;
+  }
+}
+
+function renderSubdepartmentControls() {
+  if (!isAdmin()) return;
+
+  const departmentSelectForSubdepartment = document.querySelector("#subdepartment-department");
+  const supervisorsSubdepartment = document.querySelector("#supervisor-subdepartment");
+  const employeeSelectForAssignment = document.querySelector("#subdepartment-employee");
+  const employeeSubdepartmentSelect = document.querySelector("#employee-subdepartment");
+  const selectedDepartmentId = departmentSelectForSubdepartment.value;
+  const selectedSubdepartmentId = supervisorsSubdepartment.value;
+  const selectedEmployeeId = employeeSelectForAssignment.value;
+
+  departmentSelectForSubdepartment.replaceChildren(new Option("Pilih departemen", ""));
+  for (const department of departments) {
+    departmentSelectForSubdepartment.add(new Option(department.name, department.id));
+  }
+  if (departments.some((department) => department.id === selectedDepartmentId)) {
+    departmentSelectForSubdepartment.value = selectedDepartmentId;
+  }
+
+  supervisorsSubdepartment.replaceChildren(new Option("Pilih subdepartemen", ""));
+  for (const subdepartment of subdepartments) {
+    const departmentName = departments.find((department) => department.id === subdepartment.department_id)?.name ?? "";
+    supervisorsSubdepartment.add(new Option(`${departmentName} — ${subdepartment.name}`, subdepartment.id));
+  }
+  if (subdepartments.some((subdepartment) => subdepartment.id === selectedSubdepartmentId)) {
+    supervisorsSubdepartment.value = selectedSubdepartmentId;
+  }
+
+  employeeSelectForAssignment.replaceChildren(new Option("Pilih karyawan", ""));
+  for (const employee of employees) {
+    const departmentName = departments.find((department) => department.id === employee.department_id)?.name ?? "";
+    employeeSelectForAssignment.add(new Option(`${employee.full_name} — ${departmentName}`, employee.id));
+  }
+  if (employees.some((employee) => employee.id === selectedEmployeeId)) {
+    employeeSelectForAssignment.value = selectedEmployeeId;
+  }
+
+  const selectedEmployee = employees.find((employee) => employee.id === employeeSelectForAssignment.value);
+  populateSubdepartmentSelect(
+    employeeSubdepartmentSelect,
+    selectedEmployee?.department_id,
+    selectedEmployee?.sub_department_id ?? "",
+    selectedEmployee ? "Tanpa subdepartemen" : "Pilih karyawan terlebih dahulu"
+  );
+  populateSubdepartmentSelect(
+    document.querySelector("#new-employee-subdepartment"),
+    departmentSelect.value,
+    "",
+    "Tanpa subdepartemen"
+  );
+
+  renderSubdepartmentSupervisorList();
+}
+
+function renderSubdepartmentSupervisorList() {
+  const list = document.querySelector("#subdepartment-supervisor-list");
+  if (!list) return;
+  if (subdepartments.length === 0) {
+    list.innerHTML = '<p class="text-sm text-slate-500">Belum ada subdepartemen.</p>';
+    return;
+  }
+
+  list.innerHTML = subdepartments.map((subdepartment) => {
+    const departmentName = departments.find((department) => department.id === subdepartment.department_id)?.name ?? "";
+    const supervisors = subdepartmentSupervisors.filter((item) => item.sub_department_id === subdepartment.id);
+    const contactsHtml = supervisors.length
+      ? `<ul class="mt-2 space-y-2">${supervisors.map((supervisor) => `
+          <li class="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2">
+            <span class="min-w-0 text-sm"><span class="block truncate font-semibold text-slate-800">${escapeHtml(supervisor.full_name)}</span><span class="text-xs text-slate-500">${escapeHtml(supervisor.whatsapp_number)}</span></span>
+            <button class="secondary-button min-h-[32px] shrink-0 px-2 py-1 text-xs" type="button" data-subdepartment-action="remove-supervisor" data-id="${escapeHtml(supervisor.id)}" aria-label="Hapus pengawas ${escapeHtml(supervisor.full_name)}">Hapus</button>
+          </li>`).join("")}</ul>`
+      : '<p class="mt-2 text-xs text-slate-500">Belum ada kontak pengawas.</p>';
+    return `<article class="rounded-xl border border-slate-200 p-3">
+      <div class="flex items-start justify-between gap-2">
+        <div class="min-w-0"><p class="text-xs text-slate-500">${escapeHtml(departmentName)}</p><h4 class="font-semibold text-slate-800">${escapeHtml(subdepartment.name)}</h4></div>
+        <button class="secondary-button min-h-[32px] shrink-0 px-2 py-1 text-xs" type="button" data-subdepartment-action="remove-subdepartment" data-id="${escapeHtml(subdepartment.id)}">Hapus</button>
+      </div>
+      ${contactsHtml}
+    </article>`;
+  }).join("");
+}
+
+async function loadSubdepartments() {
+  if (!isAdmin()) return;
+  const [subdepartmentResult, supervisorResult] = await Promise.all([
+    client.from("sub_departments").select("id, department_id, name").order("name"),
+    client.from("sub_department_supervisors").select("id, sub_department_id, full_name, whatsapp_number").order("full_name")
+  ]);
+  if (subdepartmentResult.error) throw subdepartmentResult.error;
+  if (supervisorResult.error) throw supervisorResult.error;
+  subdepartments = subdepartmentResult.data ?? [];
+  subdepartmentSupervisors = supervisorResult.data ?? [];
+  renderSubdepartmentControls();
+}
+
+async function saveSubdepartment(event) {
+  event.preventDefault();
+  if (!isAdmin()) return;
+  const departmentId = document.querySelector("#subdepartment-department").value;
+  const name = document.querySelector("#subdepartment-name").value.trim();
+  const button = document.querySelector("#save-subdepartment");
+  if (!departmentId || !name) {
+    showToast("Departemen dan nama subdepartemen wajib diisi.", true);
+    return;
+  }
+
+  setBusy(button, true, "Menyimpan…");
+  try {
+    const { error } = await client.from("sub_departments").insert({ department_id: departmentId, name });
+    if (error) throw error;
+    document.querySelector("#subdepartment-form").reset();
+    await loadSubdepartments();
+    showToast("Subdepartemen berhasil ditambahkan.");
+  } catch (error) {
+    console.error("Subdepartment save failed:", error);
+    showToast(`Gagal menyimpan subdepartemen: ${error.message}`, true);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+async function saveSupervisor(event) {
+  event.preventDefault();
+  if (!isAdmin()) return;
+  const subDepartmentId = document.querySelector("#supervisor-subdepartment").value;
+  const fullName = document.querySelector("#supervisor-name").value.trim();
+  const whatsappNumber = normalizeSupervisorPhone(document.querySelector("#supervisor-whatsapp").value);
+  const button = document.querySelector("#save-supervisor");
+  if (!subDepartmentId || !fullName || !/^62\d{8,13}$/.test(whatsappNumber)) {
+    showToast("Pilih subdepartemen, isi nama, dan masukkan nomor WhatsApp Indonesia yang valid.", true);
+    return;
+  }
+
+  setBusy(button, true, "Menyimpan…");
+  try {
+    const { error } = await client.from("sub_department_supervisors").insert({
+      sub_department_id: subDepartmentId,
+      full_name: fullName,
+      whatsapp_number: whatsappNumber
+    });
+    if (error) throw error;
+    document.querySelector("#supervisor-form").reset();
+    await loadSubdepartments();
+    showToast("Pengawas berhasil ditambahkan.");
+  } catch (error) {
+    console.error("Supervisor save failed:", error);
+    showToast(`Gagal menyimpan pengawas: ${error.message}`, true);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+async function saveEmployeeSubdepartment(event) {
+  event.preventDefault();
+  if (!isAdmin()) return;
+  const employeeId = document.querySelector("#subdepartment-employee").value;
+  const subDepartmentId = document.querySelector("#employee-subdepartment").value || null;
+  const button = document.querySelector("#save-employee-subdepartment");
+  if (!employeeId) {
+    showToast("Pilih karyawan terlebih dahulu.", true);
+    return;
+  }
+
+  setBusy(button, true, "Menyimpan…");
+  try {
+    const { data, error } = await client.from("employees")
+      .update({ sub_department_id: subDepartmentId })
+      .eq("id", employeeId)
+      .select("id, sub_department_id")
+      .single();
+    if (error) throw error;
+    const employee = employees.find((item) => item.id === data.id);
+    if (employee) employee.sub_department_id = data.sub_department_id;
+    renderSubdepartmentControls();
+    showToast("Penetapan subdepartemen karyawan berhasil disimpan.");
+  } catch (error) {
+    console.error("Employee subdepartment assignment failed:", error);
+    showToast(`Gagal menyimpan penetapan subdepartemen: ${error.message}`, true);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+async function handleSubdepartmentManagerClick(event) {
+  const button = event.target.closest("button[data-subdepartment-action]");
+  if (!button || !isAdmin()) return;
+  const { subdepartmentAction: action, id } = button.dataset;
+  const isSubdepartment = action === "remove-subdepartment";
+  const confirmed = window.confirm(isSubdepartment
+    ? "Hapus subdepartemen ini? Subdepartemen yang masih digunakan oleh karyawan tidak dapat dihapus."
+    : "Hapus kontak pengawas ini?");
+  if (!confirmed) return;
+
+  button.disabled = true;
+  try {
+    const table = isSubdepartment ? "sub_departments" : "sub_department_supervisors";
+    const { error } = await client.from(table).delete().eq("id", id);
+    if (error) throw error;
+    await loadSubdepartments();
+    showToast(isSubdepartment ? "Subdepartemen berhasil dihapus." : "Kontak pengawas berhasil dihapus.");
+  } catch (error) {
+    console.error("Subdepartment data deletion failed:", error);
+    showToast(`Gagal menghapus data: ${error.message}`, true);
+    button.disabled = false;
+  }
 }
 
 async function updateNetworkAndQueueUI() {
@@ -2538,12 +2778,13 @@ async function loadEmployees() {
   const selectedEmployee = employeeSelect.value;
   const { data, error } = await client
     .from("employees")
-    .select("id, department_id, full_name, employment_status, job_title, work_pattern, is_active")
+    .select("id, department_id, sub_department_id, full_name, employment_status, job_title, work_pattern, is_active")
     .eq("is_active", true)
     .order("full_name");
   if (error) throw error;
   employees = data ?? [];
   updateEmployeeOptions();
+  renderSubdepartmentControls();
 
   const ownEmployee = employees.find((employee) => employee.id === currentEmployeeId);
   if (isLinkedAdminHrCheckupAccount() && ownEmployee) {
@@ -3254,13 +3495,23 @@ async function addEmployee(event) {
   const employeeMetadata = {
     employment_status: document.querySelector("#new-employee-status").value || null,
     job_title: document.querySelector("#new-employee-job-title").value.trim() || null,
-    work_pattern: document.querySelector("#new-employee-work-pattern").value || null
+    work_pattern: document.querySelector("#new-employee-work-pattern").value || null,
+    sub_department_id: isAdmin()
+      ? document.querySelector("#new-employee-subdepartment").value || null
+      : null
   };
   const isActive = isAdmin()
     ? document.querySelector("#new-employee-active").checked
     : true;
   if (!departmentId || !name) {
     showToast("Departemen dan nama karyawan wajib diisi.", true);
+    return;
+  }
+  if (
+    employeeMetadata.sub_department_id
+    && !subdepartmentsForDepartment(departmentId).some((item) => item.id === employeeMetadata.sub_department_id)
+  ) {
+    showToast("Subdepartemen tidak sesuai dengan departemen karyawan.", true);
     return;
   }
 
@@ -3279,6 +3530,7 @@ async function addEmployee(event) {
         employment_status: employeeMetadata.employment_status,
         job_title: employeeMetadata.job_title,
         work_pattern: employeeMetadata.work_pattern,
+        sub_department_id: null,
         is_active: true
       };
       await enqueueOfflineItem({
@@ -3314,6 +3566,7 @@ async function addEmployee(event) {
           employment_status: employee.employment_status,
           job_title: employee.job_title,
           work_pattern: employee.work_pattern,
+          sub_department_id: null,
           is_active: true
         };
       } catch (networkError) {
@@ -3326,6 +3579,7 @@ async function addEmployee(event) {
             employment_status: employeeMetadata.employment_status,
             job_title: employeeMetadata.job_title,
             work_pattern: employeeMetadata.work_pattern,
+            sub_department_id: null,
             is_active: true
           };
           await enqueueOfflineItem({
@@ -3354,7 +3608,7 @@ async function addEmployee(event) {
           ...employeeMetadata,
           is_active: isActive
         })
-        .select("id, department_id, full_name, employment_status, job_title, work_pattern, is_active")
+        .select("id, department_id, sub_department_id, full_name, employment_status, job_title, work_pattern, is_active")
         .single();
       if (error) throw error;
       employee = data;
@@ -3363,6 +3617,7 @@ async function addEmployee(event) {
     if (!employees.some((existing) => existing.id === employee.id)) {
       employees.push(employee);
     }
+    renderSubdepartmentControls();
     departmentSelect.value = departmentId;
     updateEmployeeOptions();
     employeeSelect.value = employee.id;
@@ -3604,6 +3859,8 @@ async function initializeApp(user) {
   document.querySelector("#change-password-button").classList.remove("hidden");
   if (isAdmin()) await loadAdminHrMenuVisibility();
   document.querySelector("#admin-settings-form").classList.toggle("hidden", currentProfile.role !== "admin");
+  document.querySelector("#menu-visibility-form").classList.toggle("hidden", currentProfile.role !== "admin");
+  document.querySelector("#subdepartment-management").classList.toggle("hidden", !isAdmin());
   await syncBootstrapSettings();
   resetCheckupResponses();
   todayCheckupCount = null;
@@ -3648,6 +3905,7 @@ async function initializeApp(user) {
 
   await loadDepartments();
   await loadEmployees();
+  await loadSubdepartments();
   const identityEmployee = employees.find((employee) => employee.id === identityEmployeeId);
   loggedInIdentity.textContent = identityEmployee
     ? `${identityEmployee.full_name}`
@@ -3679,7 +3937,7 @@ async function initializeApp(user) {
       });
     })
     .on("postgres_changes", { event: "*", schema: "public", table: "departments" }, () => {
-      loadDepartments().then(loadEmployees).catch((error) => {
+      loadDepartments().then(loadEmployees).then(loadSubdepartments).catch((error) => {
         console.error("Realtime department refresh failed:", error);
         showToast(`Gagal memperbarui departemen: ${error.message}`, true);
       });
@@ -3693,6 +3951,18 @@ async function initializeApp(user) {
       }).catch((error) => {
         console.error("Realtime employee refresh failed:", error);
         showToast(`Gagal memperbarui data karyawan: ${error.message}`, true);
+      });
+    })
+    .on("postgres_changes", { event: "*", schema: "public", table: "sub_departments" }, () => {
+      loadSubdepartments().catch((error) => {
+        console.error("Realtime subdepartment refresh failed:", error);
+        showToast(`Gagal memperbarui subdepartemen: ${error.message}`, true);
+      });
+    })
+    .on("postgres_changes", { event: "*", schema: "public", table: "sub_department_supervisors" }, () => {
+      loadSubdepartments().catch((error) => {
+        console.error("Realtime supervisor refresh failed:", error);
+        showToast(`Gagal memperbarui pengawas: ${error.message}`, true);
       });
     })
     .subscribe((status) => {
@@ -3711,6 +3981,8 @@ async function initializeGuestApp() {
   adminHrMenuVisibilityLoaded = false;
   document.querySelector(".bottom-nav").style.removeProperty("grid-template-columns");
   document.querySelector("#admin-settings-form").classList.add("hidden");
+  document.querySelector("#menu-visibility-form").classList.add("hidden");
+  document.querySelector("#subdepartment-management").classList.add("hidden");
   try {
     if (!navigator.onLine) throw new Error("Offline");
     const guestPromises = [client.rpc("is_guest_checkups_enabled")];
@@ -3882,6 +4154,8 @@ async function handleSignOut() {
   currentDepartmentId = null;
   guestMode = false;
   departments = [];
+  subdepartments = [];
+  subdepartmentSupervisors = [];
   employees = [];
   checkups = [];
   historyList.replaceChildren();
@@ -3902,6 +4176,11 @@ function bindEvents() {
   document.querySelector("#change-password-form").addEventListener("submit", handlePasswordChange);
   document.querySelector("#admin-settings-form").addEventListener("submit", handleAdminSettingsSave);
   document.querySelector("#menu-visibility-form").addEventListener("submit", handleMenuVisibilitySave);
+  document.querySelector("#subdepartment-form").addEventListener("submit", saveSubdepartment);
+  document.querySelector("#supervisor-form").addEventListener("submit", saveSupervisor);
+  document.querySelector("#employee-subdepartment-form").addEventListener("submit", saveEmployeeSubdepartment);
+  document.querySelector("#subdepartment-employee").addEventListener("change", renderSubdepartmentControls);
+  document.querySelector("#subdepartment-supervisor-list").addEventListener("click", handleSubdepartmentManagerClick);
   document.querySelector("#reload-admin-settings").addEventListener("click", () => {
     loadAdminSettings(true).catch((error) => {
       console.error("Admin settings reload failed:", error);

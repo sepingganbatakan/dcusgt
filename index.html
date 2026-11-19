@@ -231,12 +231,12 @@
                   <label class="symptom-row"><span><b>Sesak napas</b><small>Kesulitan bernapas</small></span><input type="checkbox" name="symptoms" value="breathing_difficulty" class="toggle-input"></label>
                   <label class="symptom-row"><span><b>Nyeri dada</b><small>Rasa tidak nyaman atau nyeri di dada</small></span><input type="checkbox" name="symptoms" value="chest_pain" class="toggle-input"></label>
                   <label class="symptom-row"><span><b>Pingsan / hampir pingsan</b><small>Kehilangan kesadaran atau terasa akan pingsan</small></span><input type="checkbox" name="symptoms" value="fainting" class="toggle-input"></label>
+                  <label class="field-label mt-5 block" for="notes">Keluhan lain <span class="font-normal text-slate-400">(opsional)</span></label>
+                  <textarea id="notes" class="field-input mt-2 min-h-24 resize-y" maxlength="1000" placeholder="Tambahkan keluhan lain bila ada..."></textarea>
               </div>
               <div class="symptom-list">
                 <label class="symptom-row fit-symptom-row"><span><b>Sehat / Fit <span class="fit-self-assessment">PENILAIAN DIRI</span></b><small>Apakah Anda merasa sehat dan siap beraktivitas?</small></span><input type="checkbox" name="symptoms" value="fit" class="toggle-input" aria-label="Sehat atau fit: Ya atau Tidak"></label>
               </div>
-              <label class="field-label mt-5 block" for="notes">Keluhan lain <span class="font-normal text-slate-400">(opsional)</span></label>
-              <textarea id="notes" class="field-input mt-2 min-h-24 resize-y" maxlength="1000" placeholder="Tambahkan keluhan lain bila ada..."></textarea>
             </div>
             <div id="checkup-step3-navigation" class="grid grid-cols-2 gap-3">
               <button id="checkup-step3-prev" class="secondary-button" type="button" data-prev><i data-lucide="arrow-left"></i> Kembali</button>
@@ -398,6 +398,52 @@
           </div>
           <button id="save-menu-visibility" class="primary-button w-full" type="submit"><i data-lucide="save"></i> Simpan visibilitas menu</button>
         </form>
+        <section id="subdepartment-management" class="mb-5 hidden space-y-4">
+          <div>
+            <h2 class="font-display text-lg font-bold text-slate-900">Subdepartemen &amp; pengawas</h2>
+            <p class="mt-1 text-sm leading-5 text-slate-500">Pengawas hanya menerima notifikasi karyawan dari subdepartemen yang ditetapkan.</p>
+          </div>
+          <form id="subdepartment-form" class="panel-card space-y-3">
+            <h3 class="font-semibold text-slate-800">Tambah subdepartemen</h3>
+            <label class="field-label" for="subdepartment-department">Departemen</label>
+            <select id="subdepartment-department" class="field-input" required>
+              <option value="">Pilih departemen</option>
+            </select>
+            <label class="field-label" for="subdepartment-name">Nama subdepartemen</label>
+            <input id="subdepartment-name" class="field-input" type="text" maxlength="120" required>
+            <button id="save-subdepartment" class="primary-button w-full" type="submit"><i data-lucide="plus"></i> Tambah subdepartemen</button>
+          </form>
+          <form id="supervisor-form" class="panel-card space-y-3">
+            <h3 class="font-semibold text-slate-800">Tambah pengawas</h3>
+            <label class="field-label" for="supervisor-subdepartment">Subdepartemen</label>
+            <select id="supervisor-subdepartment" class="field-input" required>
+              <option value="">Pilih subdepartemen</option>
+            </select>
+            <label class="field-label" for="supervisor-name">Nama pengawas</label>
+            <input id="supervisor-name" class="field-input" type="text" maxlength="120" required>
+            <label class="field-label" for="supervisor-whatsapp">Nomor WhatsApp</label>
+            <input id="supervisor-whatsapp" class="field-input" type="tel" inputmode="tel" maxlength="24" placeholder="Contoh: 081234567890" required>
+            <button id="save-supervisor" class="primary-button w-full" type="submit"><i data-lucide="user-plus"></i> Tambah pengawas</button>
+          </form>
+          <div class="panel-card">
+            <h3 class="font-semibold text-slate-800">Pengawas terdaftar</h3>
+            <div id="subdepartment-supervisor-list" class="mt-3 space-y-3">
+              <p class="text-sm text-slate-500">Memuat data subdepartemen…</p>
+            </div>
+          </div>
+          <form id="employee-subdepartment-form" class="panel-card space-y-3">
+            <h3 class="font-semibold text-slate-800">Tetapkan subdepartemen karyawan</h3>
+            <label class="field-label" for="subdepartment-employee">Karyawan aktif</label>
+            <select id="subdepartment-employee" class="field-input" required>
+              <option value="">Pilih karyawan</option>
+            </select>
+            <label class="field-label" for="employee-subdepartment">Subdepartemen</label>
+            <select id="employee-subdepartment" class="field-input">
+              <option value="">Pilih karyawan terlebih dahulu</option>
+            </select>
+            <button id="save-employee-subdepartment" class="primary-button w-full" type="submit"><i data-lucide="save"></i> Simpan penetapan</button>
+          </form>
+        </section>
         <form id="admin-settings-form" class="hidden space-y-3">
           <div class="mb-3">
             <h2 class="font-display text-lg font-bold text-slate-900">Pengaturan admin</h2>
@@ -462,6 +508,10 @@
           <option value="">Pilih pola kerja</option>
           <option value="Shift">Shift</option>
           <option value="Non-Shift">Non-Shift</option>
+        </select>
+        <label id="new-employee-subdepartment-wrap" class="field-label mt-4 block hidden" for="new-employee-subdepartment">Subdepartemen <span class="font-normal text-slate-500">(opsional)</span></label>
+        <select id="new-employee-subdepartment" class="field-input mt-2 hidden">
+          <option value="">Tanpa subdepartemen</option>
         </select>
         <label id="new-employee-active-wrap" class="mt-4 flex items-center gap-3 text-sm font-semibold text-slate-700" for="new-employee-active">
           <input id="new-employee-active" class="toggle-input" type="checkbox" checked>
