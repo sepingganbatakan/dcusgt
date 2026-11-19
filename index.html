@@ -224,15 +224,17 @@
                   <input id="has-complaint-today" type="checkbox" name="has_complaint_today" value="yes" class="toggle-input" role="switch" aria-label="Ada keluhan kesehatan hari ini">
                 </label>
               </div>
-              <div id="complaint-symptoms" class="symptom-list hidden">
-                  <label class="symptom-row"><span><b>Flu/Batuk</b><small>Termasuk pilek atau sakit tenggorokan</small></span><input type="checkbox" name="symptoms" value="flu_cough" class="toggle-input"></label>
-                  <label class="symptom-row"><span><b>Pusing</b><small>Sakit kepala atau kepala terasa ringan</small></span><input type="checkbox" name="symptoms" value="dizziness" class="toggle-input"></label>
-                  <label class="symptom-row"><span><b>Nyeri otot</b><small>Nyeri atau pegal yang mengganggu</small></span><input type="checkbox" name="symptoms" value="muscle_pain" class="toggle-input"></label>
+              <div id="complaint-symptoms" class="complaint-details hidden">
+                <div class="complaint-options">
+                  <label class="symptom-row"><span><b>Flu/Batuk</b><small>Pilek atau sakit tenggorokan</small></span><input type="checkbox" name="symptoms" value="flu_cough" class="toggle-input"></label>
+                  <label class="symptom-row"><span><b>Pusing</b><small>Sakit kepala atau kepala ringan</small></span><input type="checkbox" name="symptoms" value="dizziness" class="toggle-input"></label>
+                  <label class="symptom-row"><span><b>Nyeri otot</b><small>Nyeri atau pegal</small></span><input type="checkbox" name="symptoms" value="muscle_pain" class="toggle-input"></label>
                   <label class="symptom-row"><span><b>Sesak napas</b><small>Kesulitan bernapas</small></span><input type="checkbox" name="symptoms" value="breathing_difficulty" class="toggle-input"></label>
-                  <label class="symptom-row"><span><b>Nyeri dada</b><small>Rasa tidak nyaman atau nyeri di dada</small></span><input type="checkbox" name="symptoms" value="chest_pain" class="toggle-input"></label>
+                  <label class="symptom-row"><span><b>Nyeri dada</b><small>Rasa tidak nyaman atau nyeri</small></span><input type="checkbox" name="symptoms" value="chest_pain" class="toggle-input"></label>
                   <label class="symptom-row"><span><b>Pingsan / hampir pingsan</b><small>Kehilangan kesadaran atau terasa akan pingsan</small></span><input type="checkbox" name="symptoms" value="fainting" class="toggle-input"></label>
-                  <label class="field-label mt-5 block" for="notes">Keluhan lain <span class="font-normal text-slate-400">(opsional)</span></label>
-                  <textarea id="notes" class="field-input mt-2 min-h-24 resize-y" maxlength="1000" placeholder="Tambahkan keluhan lain bila ada..."></textarea>
+                </div>
+                <label class="field-label mt-4 block" for="notes">Keluhan lain <span class="font-normal text-slate-400">(opsional)</span></label>
+                <textarea id="notes" class="field-input mt-2 min-h-20 resize-y" maxlength="1000" placeholder="Tambahkan keluhan lain bila ada..."></textarea>
               </div>
               <div class="symptom-list">
                 <label class="symptom-row fit-symptom-row"><span><b>Sehat / Fit <span class="fit-self-assessment">PENILAIAN DIRI</span></b><small>Apakah Anda merasa sehat dan siap beraktivitas?</small></span><input type="checkbox" name="symptoms" value="fit" class="toggle-input" aria-label="Sehat atau fit: Ya atau Tidak"></label>

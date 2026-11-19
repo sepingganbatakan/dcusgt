@@ -1304,7 +1304,7 @@ function renderCheckupIdentitySummary() {
 
 function hideDailyCheckupStatus() {
   checkupForm.classList.remove("hidden");
-  checkupProgress.classList.remove("hidden");
+  showCheckupProgress();
   resultCard.classList.add("hidden");
   document.querySelector("#daily-checkup-completed-notice").classList.add("hidden");
 }
@@ -1350,7 +1350,7 @@ function showDailyCheckupStatus(checkup) {
     hideDailyCheckupStatus();
     setActiveStep(1);
     checkupForm.classList.remove("hidden");
-    checkupProgress.classList.remove("hidden");
+    showCheckupProgress();
     resultCard.classList.add("hidden");
     updateEmployeeOptions();
   });
@@ -1365,7 +1365,7 @@ function showDailyCheckupStatus(checkup) {
 
 function showCheckupForm(step = 2) {
   checkupForm.classList.remove("hidden");
-  checkupProgress.classList.remove("hidden");
+  showCheckupProgress();
   document.querySelector("#daily-checkup-status-loading").classList.add("hidden");
   document.querySelector("#daily-checkup-completed-notice").classList.add("hidden");
   resultCard.classList.add("hidden");
@@ -1592,6 +1592,10 @@ function formatDate(value, includeTime = true) {
   }).format(date);
 }
 
+function showCheckupProgress() {
+  checkupProgress.classList.toggle("hidden", checkupPageCount === 1);
+}
+
 function setActiveStep(step) {
   step = Math.min(step, getLastCheckupStep());
   if (guestMode && step === 1) step = 2;
@@ -1601,7 +1605,7 @@ function setActiveStep(step) {
   });
   const displayStep = step - 1;
   const totalSteps = getLastCheckupStep() - 1;
-  checkupProgress.classList.toggle("hidden", !guestMode && step === 1);
+  checkupProgress.classList.toggle("hidden", checkupPageCount === 1 || (!guestMode && step === 1));
   const percent = Math.round((displayStep / totalSteps) * 100);
   document.querySelector("#step-caption").textContent = `LANGKAH ${displayStep} DARI ${totalSteps}`;
   document.querySelector("#step-percent").textContent = `${percent}%`;
@@ -3823,7 +3827,7 @@ async function initializeApp(user) {
   document.querySelector("#daily-checkup-status-loading").classList.add("hidden");
   document.querySelector("#daily-checkup-completed-notice").classList.add("hidden");
   checkupForm.classList.remove("hidden");
-  checkupProgress.classList.remove("hidden");
+  showCheckupProgress();
   resultCard.replaceChildren();
   resultCard.classList.add("hidden");
   currentUser = user;
@@ -3923,7 +3927,7 @@ async function initializeApp(user) {
     }
   } else {
     checkupForm.classList.remove("hidden");
-    checkupProgress.classList.remove("hidden");
+    showCheckupProgress();
     resultCard.classList.add("hidden");
   }
   setTab(isLinkedAdminHrCheckupAccount() ? "checkup" : isSummaryViewer() ? "summary" : "checkup", false);
@@ -4036,7 +4040,7 @@ async function initializeGuestApp() {
   resultCard.classList.add("hidden");
   document.querySelector("#change-password-button").classList.add("hidden");
   checkupForm.classList.remove("hidden");
-  checkupProgress.classList.remove("hidden");
+  showCheckupProgress();
   document.querySelector("#checkup-identity-controls").classList.remove("hidden");
   document.querySelector("#checkup-identity-summary").classList.add("hidden");
   document.querySelector("#checkup-identity-summary").classList.remove("flex");
@@ -4359,7 +4363,7 @@ function bindEvents() {
       localStorage.removeItem(guestProfileStorageKey);
       guestProfile = null;
       checkupForm.classList.remove("hidden");
-      checkupProgress.classList.remove("hidden");
+      showCheckupProgress();
       resultCard.replaceChildren();
       resultCard.classList.add("hidden");
       departmentSelect.value = "";

@@ -283,6 +283,33 @@ button {
   border-radius: 14px;
 }
 
+.complaint-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.complaint-options .symptom-row {
+  min-height: 56px;
+  gap: 6px;
+  border: 1px solid #e8edf3;
+  border-radius: 11px;
+  padding: 7px 8px;
+}
+
+.complaint-options .symptom-row > span {
+  min-width: 0;
+}
+
+.complaint-options .symptom-row b {
+  font-size: 11px;
+}
+
+.complaint-options .symptom-row small {
+  font-size: 9px;
+  line-height: 1.25;
+}
+
 .symptom-row {
   display: flex;
   min-height: 58px;
