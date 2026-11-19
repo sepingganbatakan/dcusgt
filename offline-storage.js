@@ -56,7 +56,7 @@ export function openDB() {
 
 /**
  * Menyimpan data direktori minimalis ke cache IndexedDB
- * Mematuhi prinsip minimalisasi data: hanya id, department_id, full_name
+ * Mematuhi minimalisasi data; hanya menyimpan identitas direktori dan penanda kelayakan boolean.
  */
 export async function saveDirectoryCache(departments = [], employees = []) {
   const db = await openDB();
@@ -66,7 +66,10 @@ export async function saveDirectoryCache(departments = [], employees = []) {
     id: emp.id,
     department_id: emp.department_id,
     full_name: emp.full_name,
-    is_active: emp.is_active ?? true
+    is_active: emp.is_active ?? true,
+    ...(typeof emp.requires_substance_questions === "boolean"
+      ? { requires_substance_questions: emp.requires_substance_questions }
+      : {})
   }));
 
   const safeDepartments = departments.map((dept) => ({

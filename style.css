@@ -114,6 +114,54 @@ button {
   color: #94a3b8;
 }
 
+.blood-pressure-field {
+  position: relative;
+}
+
+.blood-pressure-input {
+  padding-right: 42px;
+  -moz-appearance: textfield;
+}
+
+.blood-pressure-input::-webkit-inner-spin-button,
+.blood-pressure-input::-webkit-outer-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
+}
+
+.blood-pressure-stepper {
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  bottom: 5px;
+  display: flex;
+  width: 27px;
+  flex-direction: column;
+}
+
+.blood-pressure-step {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  border-radius: 6px;
+  color: #64748b;
+}
+
+.blood-pressure-step:hover {
+  background: #eff6ff;
+  color: var(--brand);
+}
+
+.blood-pressure-step:focus-visible {
+  outline: 2px solid #60a5fa;
+  outline-offset: -2px;
+}
+
+.blood-pressure-step svg {
+  width: 14px;
+  height: 14px;
+}
+
 .primary-button,
 .secondary-button {
   display: inline-flex;
@@ -322,6 +370,10 @@ button {
 
 .symptom-row:last-child {
   border-bottom: 0;
+}
+
+.complaint-options .symptom-row:last-child {
+  border-bottom: 1px solid #e8edf3;
 }
 
 .fit-symptom-row {

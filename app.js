@@ -53,6 +53,10 @@ const triggerSyncBtn = document.querySelector("#trigger-sync-btn");
 const queueList = document.querySelector("#queue-list");
 const guestProfileStorageKey = "daily-checkup-guest-profile-v1";
 const checkupDraftStoragePrefix = "daily-checkup-draft-v1";
+const substanceQuestionKeys = {
+  medication: "medication_consumption_24h",
+  alcohol: "alcohol_consumption_24h"
+};
 
 let client;
 let currentUser;
@@ -91,6 +95,8 @@ let waNotificationsEnabled = false;
 let checkupLocationEnabled = false;
 let measurementProviderEnabled = false;
 let measurementProviderNames = [];
+let substanceQuestionSettings = { enabled: false, departments: [], jobTitles: [] };
+let substanceQuestionSettingsLoaded = false;
 let checkupPageCount = 3;
 let employeeDisplayLimit = (typeof DEFAULT_EMPLOYEE_DISPLAY_LIMIT === "number" && DEFAULT_EMPLOYEE_DISPLAY_LIMIT > 0)
   ? DEFAULT_EMPLOYEE_DISPLAY_LIMIT
@@ -243,6 +249,92 @@ async function syncMeasurementProviderSetting() {
   applyCheckupPageLayoutUI();
 }
 
+function normalizeConfiguredCategories(values) {
+  return [...new Set(values.map((value) => value.trim().toLocaleLowerCase("id-ID")).filter(Boolean))];
+}
+
+function isSubstanceQuestionEligible(employee) {
+  if (!employee) return false;
+  if (!substanceQuestionSettingsLoaded) return null;
+  if (!substanceQuestionSettings.enabled) return false;
+
+  const departmentName = departments.find((department) => department.id === employee.department_id)?.name;
+  if (typeof employee.job_title === "string" && departmentName) {
+    const departmentMatches = normalizeConfiguredCategories(substanceQuestionSettings.departments)
+      .includes(departmentName.trim().toLocaleLowerCase("id-ID"));
+    const jobTitleMatches = normalizeConfiguredCategories(substanceQuestionSettings.jobTitles)
+      .includes(employee.job_title.trim().toLocaleLowerCase("id-ID"));
+    return departmentMatches && jobTitleMatches;
+  }
+
+  if (typeof employee.requires_substance_questions === "boolean") {
+    return employee.requires_substance_questions;
+  }
+  return null;
+}
+
+function updateSubstanceQuestionVisibility() {
+  const section = document.querySelector("#substance-question-wrap");
+  const warning = document.querySelector("#substance-question-config-warning");
+  if (!section || !warning) return;
+
+  const employee = employees.find((item) => item.id === employeeSelect.value);
+  const eligible = isSubstanceQuestionEligible(employee);
+  section.classList.toggle("hidden", eligible !== true);
+  warning.classList.toggle("hidden", eligible !== null || !employee);
+  for (const input of checkupForm.querySelectorAll('input[name="substance_medication_24h"], input[name="substance_alcohol_24h"]')) {
+    if (eligible === false) input.checked = false;
+  }
+  updateSubstanceQuestionStates();
+}
+
+function updateSubstanceQuestionStates() {
+  for (const [name, statusId] of [
+    ["substance_medication_24h", "substance-medication-status"],
+    ["substance_alcohol_24h", "substance-alcohol-status"]
+  ]) {
+    const input = checkupForm.querySelector(`input[name="${name}"]`);
+    const status = document.querySelector(`#${statusId}`);
+    if (!input || !status) continue;
+    status.textContent = input.checked ? "Ya" : "Tidak";
+    input.setAttribute("aria-checked", String(input.checked));
+  }
+}
+
+async function syncSubstanceQuestionSettings() {
+  if (!client) return false;
+  try {
+    const { data, error } = await client.rpc("get_dcu_substance_questions_config");
+    if (error) throw error;
+    if (
+      !data
+      || typeof data.enabled !== "boolean"
+      || !Array.isArray(data.departments)
+      || data.departments.some((value) => typeof value !== "string")
+      || !Array.isArray(data.job_titles)
+      || data.job_titles.some((value) => typeof value !== "string")
+    ) {
+      throw new Error("Supabase mengembalikan konfigurasi pertanyaan konsumsi dengan format yang tidak valid.");
+    }
+
+    substanceQuestionSettings = {
+      enabled: data.enabled,
+      departments: [...new Set(data.departments.map((value) => value.trim()).filter(Boolean))],
+      jobTitles: [...new Set(data.job_titles.map((value) => value.trim()).filter(Boolean))]
+    };
+    substanceQuestionSettingsLoaded = true;
+    saveCachedAppSettings();
+    updateSubstanceQuestionVisibility();
+    return true;
+  } catch (error) {
+    console.error("Could not sync substance question settings:", error);
+    if (!substanceQuestionSettingsLoaded) {
+      showToast(`Konfigurasi pertanyaan konsumsi belum tersedia. Hubungkan ke internet atau jalankan migrasi terkait: ${error.message}`, true);
+    }
+    return false;
+  }
+}
+
 async function syncCheckupLocationSetting() {
   if (!client) return checkupLocationEnabled;
   try {
@@ -348,6 +440,17 @@ function loadCachedAppSettings() {
       measurementProviderEnabled = cached.measurementProviderEnabled;
       measurementProviderNames = cached.measurementProviderNames;
     }
+    if (
+      cached.substanceQuestionSettings
+      && typeof cached.substanceQuestionSettings.enabled === "boolean"
+      && Array.isArray(cached.substanceQuestionSettings.departments)
+      && cached.substanceQuestionSettings.departments.every((value) => typeof value === "string")
+      && Array.isArray(cached.substanceQuestionSettings.jobTitles)
+      && cached.substanceQuestionSettings.jobTitles.every((value) => typeof value === "string")
+    ) {
+      substanceQuestionSettings = cached.substanceQuestionSettings;
+      substanceQuestionSettingsLoaded = true;
+    }
     if ([1, 2, 3].includes(cached.checkupPageCount)) {
       checkupPageCount = cached.checkupPageCount;
     }
@@ -369,6 +472,7 @@ function saveCachedAppSettings() {
       checkupLocationEnabled,
       measurementProviderEnabled,
       measurementProviderNames,
+      substanceQuestionSettings,
       checkupPageCount,
       employeeDisplayLimit
     }));
@@ -384,6 +488,7 @@ async function syncBootstrapSettings() {
     syncWhatsAppNotificationSetting(),
     syncCheckupLocationSetting(),
     syncMeasurementProviderSetting(),
+    syncSubstanceQuestionSettings(),
     syncCheckupPageCountSetting(),
     syncEmployeeDisplayLimit()
   ]);
@@ -571,6 +676,17 @@ async function handleAdminSettingsSave(event) {
       }
       if (Object.hasOwn(values, "dcu_page_count")) {
         await syncCheckupPageCountSetting();
+      }
+      if ([
+        "dcu_substance_questions_enabled",
+        "dcu_substance_questions_departments",
+        "dcu_substance_questions_job_titles"
+      ].some((key) => Object.hasOwn(values, key))) {
+        if (!await syncSubstanceQuestionSettings()) {
+          throw new Error("Pengaturan pertanyaan konsumsi tersimpan, tetapi konfigurasi aktif gagal dimuat.");
+        }
+        renderEmployeeList(currentCheckupTab);
+        updateSubstanceQuestionVisibility();
       }
     } catch (error) {
       console.error("Saved settings but runtime refresh failed:", error);
@@ -985,7 +1101,10 @@ function resetCheckupResponses() {
   document.querySelector("#measurement-provider").value = "";
   checkupForm.querySelectorAll('input[name="fatigue_level"], input[name="sleep_quality"], input[name="symptoms"], input[name="has_complaint_today"]')
     .forEach((input) => { input.checked = false; });
+  checkupForm.querySelectorAll('input[name="substance_medication_24h"], input[name="substance_alcohol_24h"]')
+    .forEach((input) => { input.checked = false; });
   updateComplaintSymptomsVisibility();
+  updateSubstanceQuestionVisibility();
   updateTemperatureDisplay();
   setActiveStep(1);
 }
@@ -1056,6 +1175,8 @@ function saveCheckupDraft() {
     sleepQuality: checkupForm.querySelector('input[name="sleep_quality"]:checked')?.value ?? "",
     hasComplaintToday: document.querySelector("#has-complaint-today").checked ? "yes" : "no",
     symptoms,
+    medicationConsumption24h: checkupForm.querySelector('input[name="substance_medication_24h"]').checked,
+    alcoholConsumption24h: checkupForm.querySelector('input[name="substance_alcohol_24h"]').checked,
     notes: document.querySelector("#notes").value,
     measurementProvider: document.querySelector("#measurement-provider").value,
     step: activeStep
@@ -1070,7 +1191,14 @@ function saveCheckupDraft() {
 
 function isCheckupDraftField(target) {
   return ["systolic", "diastolic", "temperature", "notes", "measurement-provider"].includes(target?.id)
-    || ["fatigue_level", "sleep_quality", "symptoms", "has_complaint_today"].includes(target?.name);
+    || [
+      "fatigue_level",
+      "sleep_quality",
+      "symptoms",
+      "has_complaint_today",
+      "substance_medication_24h",
+      "substance_alcohol_24h"
+    ].includes(target?.name);
 }
 
 function restoreCheckupDraft(employeeId) {
@@ -1112,8 +1240,16 @@ function restoreCheckupDraft(employeeId) {
   checkupForm.querySelectorAll('input[name="symptoms"]').forEach((input) => {
     input.checked = Boolean(draft.symptoms?.[input.value]);
   });
+  for (const [name, value] of [
+    ["substance_medication_24h", draft.medicationConsumption24h],
+    ["substance_alcohol_24h", draft.alcoholConsumption24h]
+  ]) {
+    const input = checkupForm.querySelector(`input[name="${name}"]`);
+    if (input) input.checked = value === true || value === "yes";
+  }
   document.querySelector("#has-complaint-today").checked = draft.hasComplaintToday === "yes";
   updateComplaintSymptomsVisibility();
+  updateSubstanceQuestionVisibility();
   document.querySelector("#notes").value = typeof draft.notes === "string" ? draft.notes : "";
   const measurementProvider = typeof draft.measurementProvider === "string" ? draft.measurementProvider : "";
   document.querySelector("#measurement-provider").value = measurementProviderNames.includes(measurementProvider)
@@ -1612,6 +1748,16 @@ function setActiveStep(step) {
   document.querySelector("#progress-bar").style.width = `${percent}%`;
 }
 
+function validateSubstanceQuestions() {
+  const employee = employees.find((item) => item.id === employeeSelect.value);
+  const eligible = isSubstanceQuestionEligible(employee);
+  if (eligible === null) {
+    showToast("Kriteria pekerja belum dapat diverifikasi. Hubungkan ke internet untuk memperbarui konfigurasi dan direktori.", true);
+    return false;
+  }
+  return true;
+}
+
 function validateStep(step) {
   if (step === 1) {
     if (!departmentSelect.value) {
@@ -1673,6 +1819,9 @@ function validateStep(step) {
         return false;
       }
     }
+  }
+  if (step === Number(document.querySelector("#checkup-symptoms-step").dataset.step)) {
+    if (!validateSubstanceQuestions()) return false;
   }
   return true;
 }
@@ -2704,7 +2853,11 @@ async function mergePendingOfflineGuests() {
           employment_status: item.payload.p_employment_status,
           job_title: item.payload.p_job_title,
           work_pattern: item.payload.p_work_pattern,
-          is_active: true
+          is_active: true,
+          requires_substance_questions: isSubstanceQuestionEligible({
+            department_id: item.payload.p_department_id,
+            job_title: item.payload.p_job_title
+          })
         });
       }
     }
@@ -2725,6 +2878,7 @@ async function loadGuestDirectory() {
       populateDepartmentSelect(departmentSelect);
       populateDepartmentSelect(document.querySelector("#profile-department"));
       updateEmployeeOptions();
+      updateSubstanceQuestionVisibility();
       hasRenderedFromCache = true;
     }
   } catch (e) {
@@ -2737,7 +2891,7 @@ async function loadGuestDirectory() {
       if (!hasRenderedFromCache) throw new Error("Offline");
       return;
     }
-    const { data, error } = await client.rpc("get_guest_directory");
+    const { data, error } = await client.rpc("get_guest_directory_with_substance_rules");
     if (error) throw error;
     const directory = data ?? [];
 
@@ -2749,6 +2903,7 @@ async function loadGuestDirectory() {
       id: row.employee_id,
       department_id: row.department_id,
       full_name: row.employee_name,
+      requires_substance_questions: row.requires_substance_questions,
       is_active: true
     })).sort((a, b) => a.full_name.localeCompare(b.full_name, "id"));
 
@@ -2759,6 +2914,7 @@ async function loadGuestDirectory() {
     populateDepartmentSelect(departmentSelect);
     populateDepartmentSelect(document.querySelector("#profile-department"));
     updateEmployeeOptions();
+    updateSubstanceQuestionVisibility();
   } catch (err) {
     if (!hasRenderedFromCache) {
       console.warn("Memuat direktori dari cache offline fallback:", err);
@@ -2770,6 +2926,7 @@ async function loadGuestDirectory() {
         populateDepartmentSelect(departmentSelect);
         populateDepartmentSelect(document.querySelector("#profile-department"));
         updateEmployeeOptions();
+        updateSubstanceQuestionVisibility();
         showToast("Menggunakan direktori tersimpan (offline).");
       } else {
         throw new Error("Data karyawan belum tersedia offline. Hubungkan ke internet setidaknya sekali.");
@@ -2840,6 +2997,7 @@ async function loadEmployees() {
   } else {
     throw new Error("Akun belum ditautkan ke data karyawan. Hubungi administrator.");
   }
+  updateSubstanceQuestionVisibility();
 }
 
 function getHistoryFilters() {
@@ -2983,8 +3141,12 @@ function renderHistory() {
     const status = statusDetails[checkup.readiness_status] ?? statusDetails.need_observation;
     const employee = checkup.employees;
     const symptoms = Object.entries(checkup.symptoms ?? {})
-      .filter(([, selected]) => selected)
+      .filter(([key, selected]) => selected && !Object.values(substanceQuestionKeys).includes(key))
       .map(([key]) => symptomLabels[key] ?? key);
+    const substanceAnswers = [
+      [substanceQuestionKeys.medication, "Konsumsi obat-obatan dalam 24 jam terakhir"],
+      [substanceQuestionKeys.alcohol, "Konsumsi alkohol dalam 24 jam terakhir"]
+    ].filter(([key]) => typeof checkup.symptoms?.[key] === "boolean");
     const locationDetails = checkup.location_latitude !== null
       && checkup.location_latitude !== undefined
       && checkup.location_longitude !== null
@@ -3007,6 +3169,7 @@ function renderHistory() {
         <p><span class="block text-slate-400">Kelelahan / tidur</span><b class="mt-1 block text-slate-700">${checkup.fatigue_level} / ${checkup.sleep_quality}</b></p>
       </div>
       ${symptoms.length ? `<p class="mt-3 text-xs leading-5 text-slate-500"><b class="text-slate-600">Gejala:</b> ${escapeHtml(symptoms.join(", "))}</p>` : ""}
+      ${substanceAnswers.length ? `<div class="mt-3 space-y-1 text-xs leading-5 text-slate-500">${substanceAnswers.map(([key, label]) => `<p><b class="text-slate-600">${label}:</b> ${checkup.symptoms[key] ? "Ya" : "Tidak"}</p>`).join("")}</div>` : ""}
       ${checkup.measurement_provider ? `<p class="mt-2 text-xs leading-5 text-slate-500"><b class="text-slate-600">Tenaga medis:</b> ${escapeHtml(checkup.measurement_provider)}</p>` : ""}
       ${checkup.notes ? `<p class="mt-2 whitespace-pre-wrap break-words text-xs leading-5 text-slate-500">${escapeHtml(checkup.notes)}</p>` : ""}
       ${locationDetails}
@@ -3114,6 +3277,13 @@ function collectCheckup() {
   const symptoms = Object.fromEntries(
     [...checkupForm.querySelectorAll('input[name="symptoms"]')].map((input) => [input.value, input.checked])
   );
+  const selectedEmployee = employees.find((employee) => employee.id === employeeSelect.value);
+  if (isSubstanceQuestionEligible(selectedEmployee) === true) {
+    symptoms[substanceQuestionKeys.medication] =
+      checkupForm.querySelector('input[name="substance_medication_24h"]').checked;
+    symptoms[substanceQuestionKeys.alcohol] =
+      checkupForm.querySelector('input[name="substance_alcohol_24h"]').checked;
+  }
   return {
     employee_id: isCheckupIdentityLocked() ? currentEmployeeId : employeeSelect.value,
     systolic: Number(document.querySelector("#systolic").value),
@@ -3131,7 +3301,7 @@ function collectCheckup() {
 
 function reportText(payload, status, checkedAt, employeeName, departmentName) {
   const symptomNames = Object.entries(payload.symptoms)
-    .filter(([, selected]) => selected)
+    .filter(([key, selected]) => selected && !Object.values(substanceQuestionKeys).includes(key))
     .map(([key]) => symptomLabels[key]);
   return [
     "*Laporan Daily Checkup*",
@@ -3240,6 +3410,7 @@ async function submitCheckup(event) {
     setActiveStep(2);
     return;
   }
+  if (!validateSubstanceQuestions()) return;
 
   if (navigator.onLine) await syncCheckupLocationSetting();
   document.querySelector("#checkup-location-confirmation")
@@ -3679,7 +3850,9 @@ function triggerCsvDownload(items) {
   if (!items?.length) return false;
   const header = [
     "Waktu checkup", "Nama karyawan", "Departemen", "Tekanan sistolik", "Tekanan diastolik",
-    "Suhu (C)", "Kelelahan (1-5)", "Kualitas tidur (1-5)", "Gejala", "Tenaga medis", "Catatan", "Status",
+    "Suhu (C)", "Kelelahan (1-5)", "Kualitas tidur (1-5)", "Gejala",
+    "Konsumsi obat-obatan dalam 24 jam terakhir", "Konsumsi alkohol dalam 24 jam terakhir",
+    "Tenaga medis", "Catatan", "Status",
     "Latitude", "Longitude", "Akurasi lokasi (m)", "Waktu pengambilan lokasi"
   ];
   const rows = items.map((item) => [
@@ -3691,7 +3864,16 @@ function triggerCsvDownload(items) {
     item.temperature_c,
     item.fatigue_level,
     item.sleep_quality,
-    Object.entries(item.symptoms ?? {}).filter(([, selected]) => selected).map(([key]) => symptomLabels[key] ?? key).join("; "),
+    Object.entries(item.symptoms ?? {})
+      .filter(([key, selected]) => selected && !Object.values(substanceQuestionKeys).includes(key))
+      .map(([key]) => symptomLabels[key] ?? key)
+      .join("; "),
+    typeof item.symptoms?.[substanceQuestionKeys.medication] === "boolean"
+      ? item.symptoms[substanceQuestionKeys.medication] ? "Ya" : "Tidak"
+      : "",
+    typeof item.symptoms?.[substanceQuestionKeys.alcohol] === "boolean"
+      ? item.symptoms[substanceQuestionKeys.alcohol] ? "Ya" : "Tidak"
+      : "",
     item.measurement_provider,
     item.notes,
     statusDetails[item.readiness_status]?.label ?? item.readiness_status,
@@ -4381,11 +4563,33 @@ function bindEvents() {
     }
   });
   document.querySelector("#temperature").addEventListener("input", updateTemperatureDisplay);
+  checkupForm.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-blood-pressure-step]");
+    if (!button) return;
+    const input = document.getElementById(button.dataset.bloodPressureInput);
+    if (!input) return;
+    const currentValue = Number(input.value);
+    const step = Number(button.dataset.bloodPressureStep);
+    if (!Number.isFinite(currentValue) || !Number.isFinite(step)) return;
+    input.value = String(currentValue + step);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  checkupForm.querySelectorAll(".blood-pressure-input").forEach((input) => {
+    input.addEventListener("keydown", (event) => {
+      if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+      event.preventDefault();
+      input.value = String(Number(input.value) + (event.key === "ArrowUp" ? 5 : -5));
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  });
   checkupForm.addEventListener("input", (event) => {
     if (isCheckupDraftField(event.target)) saveCheckupDraft();
   });
   checkupForm.addEventListener("change", (event) => {
     if (event.target?.name === "has_complaint_today") updateComplaintSymptomsVisibility();
+    if (["substance_medication_24h", "substance_alcohol_24h"].includes(event.target?.name)) {
+      updateSubstanceQuestionStates();
+    }
     if (isCheckupDraftField(event.target)) saveCheckupDraft();
   });
   checkupForm.addEventListener("submit", submitCheckup);

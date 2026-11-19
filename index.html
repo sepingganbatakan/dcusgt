@@ -179,8 +179,22 @@
               <div class="mb-4 flex items-center gap-2"><i data-lucide="activity" class="section-icon"></i><h2 class="section-title">Kondisi fisik & vital</h2></div>
               <p class="field-label">Tekanan darah <span class="font-normal text-slate-400">(mmHg)</span></p>
               <div class="mt-2 grid grid-cols-2 gap-3">
-                <label><span class="sr-only">Sistolik</span><input id="systolic" class="field-input" type="number" min="50" max="260" step="5" value="90" inputmode="numeric" placeholder="Sistolik" required></label>
-                <label><span class="sr-only">Diastolik</span><input id="diastolic" class="field-input" type="number" min="30" max="160" step="5" value="70" inputmode="numeric" placeholder="Diastolik" required></label>
+                <div class="blood-pressure-field">
+                  <label class="sr-only" for="systolic">Sistolik</label>
+                  <input id="systolic" class="field-input blood-pressure-input" type="number" min="50" max="260" step="any" value="90" inputmode="numeric" placeholder="Sistolik" required>
+                  <div class="blood-pressure-stepper">
+                    <button class="blood-pressure-step" type="button" data-blood-pressure-input="systolic" data-blood-pressure-step="5" aria-label="Naikkan sistolik 5 mmHg"><i data-lucide="chevron-up" aria-hidden="true"></i></button>
+                    <button class="blood-pressure-step" type="button" data-blood-pressure-input="systolic" data-blood-pressure-step="-5" aria-label="Turunkan sistolik 5 mmHg"><i data-lucide="chevron-down" aria-hidden="true"></i></button>
+                  </div>
+                </div>
+                <div class="blood-pressure-field">
+                  <label class="sr-only" for="diastolic">Diastolik</label>
+                  <input id="diastolic" class="field-input blood-pressure-input" type="number" min="30" max="160" step="any" value="70" inputmode="numeric" placeholder="Diastolik" required>
+                  <div class="blood-pressure-stepper">
+                    <button class="blood-pressure-step" type="button" data-blood-pressure-input="diastolic" data-blood-pressure-step="5" aria-label="Naikkan diastolik 5 mmHg"><i data-lucide="chevron-up" aria-hidden="true"></i></button>
+                    <button class="blood-pressure-step" type="button" data-blood-pressure-input="diastolic" data-blood-pressure-step="-5" aria-label="Turunkan diastolik 5 mmHg"><i data-lucide="chevron-down" aria-hidden="true"></i></button>
+                  </div>
+                </div>
               </div>
               <div class="mt-5 flex items-center justify-between">
                 <label class="field-label" for="temperature">Suhu tubuh</label>
@@ -231,10 +245,23 @@
                   <label class="symptom-row"><span><b>Nyeri otot</b><small>Nyeri atau pegal</small></span><input type="checkbox" name="symptoms" value="muscle_pain" class="toggle-input"></label>
                   <label class="symptom-row"><span><b>Sesak napas</b><small>Kesulitan bernapas</small></span><input type="checkbox" name="symptoms" value="breathing_difficulty" class="toggle-input"></label>
                   <label class="symptom-row"><span><b>Nyeri dada</b><small>Rasa tidak nyaman atau nyeri</small></span><input type="checkbox" name="symptoms" value="chest_pain" class="toggle-input"></label>
-                  <label class="symptom-row"><span><b>Pingsan / hampir pingsan</b><small>Kehilangan kesadaran atau terasa akan pingsan</small></span><input type="checkbox" name="symptoms" value="fainting" class="toggle-input"></label>
+                  <label class="symptom-row"><span><b>Hampir pingsan</b><small>Terasa akan pingsan</small></span><input type="checkbox" name="symptoms" value="fainting" class="toggle-input"></label>
                 </div>
                 <label class="field-label mt-4 block" for="notes">Keluhan lain <span class="font-normal text-slate-400">(opsional)</span></label>
                 <textarea id="notes" class="field-input mt-2 min-h-20 resize-y" maxlength="1000" placeholder="Tambahkan keluhan lain bila ada..."></textarea>
+              </div>
+              <p id="substance-question-config-warning" class="hidden mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900" role="status">Kriteria pekerja belum dapat diverifikasi. Hubungkan perangkat ke internet untuk memperbarui konfigurasi dan direktori sebelum mengirim DCU.</p>
+              <div id="substance-question-wrap" class="mt-4 space-y-4 hidden">
+                <div class="symptom-list">
+                  <label class="symptom-row">
+                    <span><b>Konsumsi obat-obatan dalam 24 jam terakhir?</b><small id="substance-medication-status">Tidak</small></span>
+                    <input id="substance-medication-24h" type="checkbox" name="substance_medication_24h" value="yes" class="toggle-input" role="switch" aria-label="Konsumsi obat-obatan dalam 24 jam terakhir">
+                  </label>
+                  <label class="symptom-row">
+                    <span><b>Minum alkohol dalam 24 jam terakhir?</b><small id="substance-alcohol-status">Tidak</small></span>
+                    <input id="substance-alcohol-24h" type="checkbox" name="substance_alcohol_24h" value="yes" class="toggle-input" role="switch" aria-label="Konsumsi alkohol dalam 24 jam terakhir">
+                  </label>
+                </div>
               </div>
               <div class="symptom-list">
                 <label class="symptom-row fit-symptom-row"><span><b>Sehat / Fit <span class="fit-self-assessment">PENILAIAN DIRI</span></b><small>Apakah Anda merasa sehat dan siap beraktivitas?</small></span><input type="checkbox" name="symptoms" value="fit" class="toggle-input" aria-label="Sehat atau fit: Ya atau Tidak"></label>
