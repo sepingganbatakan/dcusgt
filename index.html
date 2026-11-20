@@ -410,7 +410,7 @@
         <div class="mb-5">
           <p class="eyebrow">ADMINISTRASI</p>
           <h1 id="settings-heading" class="mt-1 font-display text-2xl font-extrabold tracking-tight text-slate-900">Pengaturan aplikasi</h1>
-          <p class="mt-1 text-sm leading-5 text-slate-500">Atur visibilitas menu Profile dan Checkup untuk semua akun Admin/HR.</p>
+          <p class="mt-1 text-sm leading-5 text-slate-500">Kelola pengaturan aplikasi sesuai izin akun Anda.</p>
         </div>
         <form id="menu-visibility-form" class="mb-5 space-y-3">
           <div class="panel-card">
@@ -426,6 +426,25 @@
             </label>
           </div>
           <button id="save-menu-visibility" class="primary-button w-full" type="submit"><i data-lucide="save"></i> Simpan visibilitas menu</button>
+        </form>
+        <form id="hr-settings-access-form" class="hidden mb-5 space-y-3">
+          <div>
+            <h2 class="font-display text-lg font-bold text-slate-900">Akses pengaturan HR</h2>
+            <p class="mt-1 text-sm leading-5 text-slate-500">Tentukan apakah HR dapat membuka menu Pengaturan dan memilih pengaturan aplikasi yang boleh diubah.</p>
+          </div>
+          <div class="panel-card">
+            <label class="flex items-center justify-between gap-3">
+              <span class="field-label">Aktifkan menu Pengaturan untuk HR</span>
+              <input id="hr-settings-enabled" class="toggle-input" type="checkbox">
+            </label>
+          </div>
+          <div class="panel-card space-y-3">
+            <h3 class="font-semibold text-slate-800">Pengaturan yang boleh diubah HR</h3>
+            <div id="hr-settings-permissions" class="space-y-3">
+              <p class="text-sm text-slate-500">Memuat daftar pengaturan…</p>
+            </div>
+          </div>
+          <button id="save-hr-settings-access" class="primary-button w-full" type="submit"><i data-lucide="save"></i> Simpan akses HR</button>
         </form>
         <section id="subdepartment-management" class="mb-5 hidden space-y-4">
           <div>
@@ -485,6 +504,16 @@
             <button id="reload-admin-settings" class="secondary-button w-full" type="button"><i data-lucide="refresh-cw"></i> Muat ulang</button>
             <button id="save-admin-settings" class="primary-button w-full" type="submit"><i data-lucide="save"></i> Simpan</button>
           </div>
+        </form>
+        <form id="hr-settings-form" class="hidden space-y-3">
+          <div class="mb-3">
+            <h2 class="font-display text-lg font-bold text-slate-900">Pengaturan yang diizinkan</h2>
+            <p class="mt-1 text-sm leading-5 text-slate-500">HR hanya dapat mengubah pengaturan yang telah diizinkan oleh admin.</p>
+          </div>
+          <div id="hr-settings-fields" class="space-y-3">
+            <p class="panel-card text-sm text-slate-500">Memuat pengaturan…</p>
+          </div>
+          <button id="save-hr-settings" class="primary-button w-full" type="submit"><i data-lucide="save"></i> Simpan</button>
         </form>
       </section>
 
