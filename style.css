@@ -609,6 +609,9 @@ button {
 .stat-icon.green { background: #ecfdf5; color: #059669; }
 .stat-icon.amber { background: #fffbeb; color: #d97706; }
 .stat-icon.rose { background: #fff1f2; color: #e11d48; }
+.stat-icon.emerald { background: #ecfdf5; color: #059669; }
+.stat-icon.cyan { background: #fff1f2; color: #00ffff; }
+.stat-icon.violet { background: #f3e8ff; color: #7e22ce; }  
 
 .stat-label {
   margin-top: 9px;
