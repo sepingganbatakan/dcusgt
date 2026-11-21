@@ -115,6 +115,29 @@ if (!["list", "dropdown"].includes(EMPLOYEE_SELECTION_MODE)) {
   throw new Error('EMPLOYEE_SELECTION_MODE must be "list" or "dropdown".');
 }
 
+function updateSleepHoursDisplay() {
+  const input = document.querySelector("#sleep-hours");
+  if (!input) return;
+  const sleepHours = Number(input.value);
+  const value = document.querySelector("#sleep-hours-value");
+  const hint = document.querySelector("#sleep-hours-hint");
+  value.textContent = `${sleepHours.toFixed(1).replace(/\.0$/, "")} jam`;
+  value.className = sleepHours < 3
+    ? "rounded-lg bg-rose-50 px-2.5 py-1 text-sm font-bold text-rose-700"
+    : sleepHours <= 5
+      ? "rounded-lg bg-amber-50 px-2.5 py-1 text-sm font-bold text-amber-700"
+      : "rounded-lg bg-emerald-50 px-2.5 py-1 text-sm font-bold text-emerald-700";
+  hint.textContent = sleepHours < 3
+    ? "Kurang dari 3 jam — hentikan aktifitas dan segera istirahat."
+    : sleepHours <= 5
+      ? "3 – 5 jam — direkomendasikan istirahat cukup."
+      : sleepHours <= 7
+        ? "5 – 7 jam — lakukan istirahat berkala."
+        : sleepHours <= 9
+          ? "7 – 9 jam — dapat beraktifitas seperti biasa."
+          : "di atas 9 jam — sesuaikan istirahat sesuai kebutuhan.";
+}
+
 function getActiveTimezone() {
   return activeTimezone;
 }
@@ -1325,13 +1348,16 @@ function resetCheckupResponses() {
   document.querySelector("#temperature").value = "36.5";
   document.querySelector("#notes").value = "";
   document.querySelector("#measurement-provider").value = "";
-  checkupForm.querySelectorAll('input[name="fatigue_level"], input[name="sleep_quality"], input[name="symptoms"], input[name="has_complaint_today"]')
+  checkupForm.querySelectorAll('input[name="fatigue_level"], input[name="symptoms"], input[name="has_complaint_today"]')
     .forEach((input) => { input.checked = false; });
   checkupForm.querySelectorAll('input[name="substance_medication_24h"], input[name="substance_alcohol_24h"]')
     .forEach((input) => { input.checked = false; });
   updateComplaintSymptomsVisibility();
   updateSubstanceQuestionVisibility();
   updateTemperatureDisplay();
+  const sleepHoursInput = document.querySelector("#sleep-hours");
+  if (sleepHoursInput) sleepHoursInput.value = "8";
+  updateSleepHoursDisplay();
   setActiveStep(1);
 }
 
@@ -1398,7 +1424,7 @@ function saveCheckupDraft() {
     diastolic: document.querySelector("#diastolic").value,
     temperature: document.querySelector("#temperature").value,
     fatigueLevel: checkupForm.querySelector('input[name="fatigue_level"]:checked')?.value ?? "",
-    sleepQuality: checkupForm.querySelector('input[name="sleep_quality"]:checked')?.value ?? "",
+    sleepHours: document.querySelector("#sleep-hours")?.value ?? "",
     hasComplaintToday: document.querySelector("#has-complaint-today").checked ? "yes" : "no",
     symptoms,
     medicationConsumption24h: checkupForm.querySelector('input[name="substance_medication_24h"]').checked,
@@ -1416,10 +1442,9 @@ function saveCheckupDraft() {
 }
 
 function isCheckupDraftField(target) {
-  return ["systolic", "diastolic", "temperature", "notes", "measurement-provider"].includes(target?.id)
+  return ["systolic", "diastolic", "temperature", "sleep-hours", "notes", "measurement-provider"].includes(target?.id)
     || [
       "fatigue_level",
-      "sleep_quality",
       "symptoms",
       "has_complaint_today",
       "substance_medication_24h",
@@ -1457,11 +1482,16 @@ function restoreCheckupDraft(employeeId) {
   if (Number.isFinite(temperature) && temperature >= 34 && temperature <= 42) {
     document.querySelector("#temperature").value = String(temperature);
   }
-  for (const [name, value] of [["fatigue_level", draft.fatigueLevel], ["sleep_quality", draft.sleepQuality]]) {
+  for (const [name, value] of [["fatigue_level", draft.fatigueLevel]]) {
     if (["1", "2", "3", "4", "5"].includes(String(value))) {
       const input = checkupForm.querySelector(`input[name="${name}"][value="${value}"]`);
       if (input) input.checked = true;
     }
+  }
+  const sleepHoursInput = document.querySelector("#sleep-hours");
+  const sleepHours = Number(draft.sleepHours);
+  if (sleepHoursInput && Number.isFinite(sleepHours) && sleepHours >= 0 && sleepHours <= 12 && sleepHours * 2 % 1 === 0) {
+    sleepHoursInput.value = String(sleepHours);
   }
   checkupForm.querySelectorAll('input[name="symptoms"]').forEach((input) => {
     input.checked = Boolean(draft.symptoms?.[input.value]);
@@ -1482,6 +1512,7 @@ function restoreCheckupDraft(employeeId) {
     ? measurementProvider
     : "";
   updateTemperatureDisplay();
+  updateSleepHoursDisplay();
   setActiveStep(Number.isInteger(draft.step) && draft.step >= 1 && draft.step <= getLastCheckupStep() ? draft.step : 2);
   return true;
 }
@@ -1785,7 +1816,7 @@ async function loadAuthenticatedDailyCheckup(employeeId) {
   const { start, end } = getDateRange();
   const { data, error } = await client
     .from("checkups")
-    .select("id, employee_id, checked_at, systolic, diastolic, temperature_c, fatigue_level, sleep_quality, symptoms, notes, measurement_provider, readiness_status")
+    .select("id, employee_id, checked_at, systolic, diastolic, temperature_c, fatigue_level, sleep_hours, sleep_quality, symptoms, notes, measurement_provider, readiness_status")
     .eq("employee_id", employeeId)
     .gte("checked_at", start)
     .lt("checked_at", end)
@@ -2039,11 +2070,19 @@ function validateStep(step) {
       showToast("Nilai sistolik harus lebih besar dari diastolik.", true);
       return false;
     }
-    for (const name of ["fatigue_level", "sleep_quality"]) {
-      if (!checkupForm.querySelector(`input[name="${name}"]:checked`)) {
-        showToast("Pilih nilai kelelahan dan kualitas tidur.", true);
-        return false;
-      }
+    if (!checkupForm.querySelector('input[name="fatigue_level"]:checked')) {
+      showToast("Pilih nilai kelelahan.", true);
+      return false;
+    }
+    const sleepHoursInput = document.querySelector("#sleep-hours");
+    if (!sleepHoursInput) {
+      showToast("Form checkup belum diperbarui. Muat ulang aplikasi untuk menggunakan isian jumlah jam tidur.", true);
+      return false;
+    }
+    const sleepHours = Number(sleepHoursInput.value);
+    if (!Number.isFinite(sleepHours) || sleepHours < 0 || sleepHours > 12) {
+      showToast("Pilih jumlah jam tidur antara 0 dan 12 jam.", true);
+      return false;
     }
   }
   if (step === Number(document.querySelector("#checkup-symptoms-step").dataset.step)) {
@@ -2980,7 +3019,9 @@ async function syncOfflineQueue(showToastNotice = false) {
           p_diastolic: item.payload.diastolic,
           p_temperature_c: item.payload.temperature_c,
           p_fatigue_level: item.payload.fatigue_level,
-          p_sleep_quality: item.payload.sleep_quality,
+          ...(item.payload.sleep_hours == null
+            ? { p_sleep_quality: item.payload.sleep_quality }
+            : { p_sleep_hours: item.payload.sleep_hours }),
           p_symptoms: item.payload.symptoms,
           p_notes: item.payload.notes,
           p_measurement_provider: item.payload.measurement_provider ?? null,
@@ -3242,7 +3283,7 @@ async function loadCheckups() {
   historyList.innerHTML = '<div class="empty-state">Memuat riwayat…</div>';
   let query = client
     .from("checkups")
-    .select("id, employee_id, checked_at, systolic, diastolic, temperature_c, fatigue_level, sleep_quality, symptoms, notes, measurement_provider, readiness_status, location_latitude, location_longitude, location_accuracy_m, location_captured_at, employees!inner(full_name, department_id, departments(name))")
+    .select("id, employee_id, checked_at, systolic, diastolic, temperature_c, fatigue_level, sleep_hours, sleep_quality, symptoms, notes, measurement_provider, readiness_status, location_latitude, location_longitude, location_accuracy_m, location_captured_at, employees!inner(full_name, department_id, departments(name))")
     .order("checked_at", { ascending: false })
     .limit(1000);
 
@@ -3393,7 +3434,7 @@ function renderHistory() {
       <div class="mt-3 grid grid-cols-3 gap-2 border-t border-slate-100 pt-3 text-xs">
         <p><span class="block text-slate-400">Tekanan darah</span><b class="mt-1 block text-slate-700">${checkup.systolic}/${checkup.diastolic}</b></p>
         <p><span class="block text-slate-400">Suhu</span><b class="mt-1 block text-slate-700">${Number(checkup.temperature_c).toFixed(1)}°C</b></p>
-        <p><span class="block text-slate-400">Kelelahan / tidur</span><b class="mt-1 block text-slate-700">${checkup.fatigue_level} / ${checkup.sleep_quality}</b></p>
+        <p><span class="block text-slate-400">Kelelahan / tidur</span><b class="mt-1 block text-slate-700">${checkup.fatigue_level} / ${checkup.sleep_hours != null ? `${checkup.sleep_hours} jam` : `${checkup.sleep_quality ?? "—"}/5 (data lama)`}</b></p>
       </div>
       ${symptoms.length ? `<p class="mt-3 text-xs leading-5 text-slate-500"><b class="text-slate-600">Gejala:</b> ${escapeHtml(symptoms.join(", "))}</p>` : ""}
       ${substanceAnswers.length ? `<div class="mt-3 space-y-1 text-xs leading-5 text-slate-500">${substanceAnswers.map(([key, label]) => `<p><b class="text-slate-600">${label}:</b> ${checkup.symptoms[key] ? "Ya" : "Tidak"}</p>`).join("")}</div>` : ""}
@@ -3517,7 +3558,7 @@ function collectCheckup() {
     diastolic: Number(document.querySelector("#diastolic").value),
     temperature_c: Number(document.querySelector("#temperature").value),
     fatigue_level: Number(checkupForm.querySelector('input[name="fatigue_level"]:checked')?.value),
-    sleep_quality: Number(checkupForm.querySelector('input[name="sleep_quality"]:checked')?.value),
+    sleep_hours: Number(document.querySelector("#sleep-hours").value),
     symptoms,
     notes: document.querySelector("#notes").value.trim() || null,
     measurement_provider: measurementProviderEnabled
@@ -3539,7 +3580,7 @@ function reportText(payload, status, checkedAt, employeeName, departmentName) {
     `Tekanan darah: ${payload.systolic}/${payload.diastolic} mmHg`,
     `Suhu: ${payload.temperature_c.toFixed(1)}°C`,
     `Kelelahan: ${payload.fatigue_level}/5`,
-    `Kualitas tidur: ${payload.sleep_quality}/5`,
+    `Jumlah jam tidur: ${payload.sleep_hours} jam`,
     `Gejala: ${symptomNames.length ? symptomNames.join(", ") : "Tidak ada yang dipilih"}`,
     payload.measurement_provider ? `Tenaga medis: ${payload.measurement_provider}` : "",
     payload.notes ? `Catatan: ${payload.notes}` : "",
@@ -3690,6 +3731,7 @@ async function submitCheckup(event) {
     if (isLinkedAdminHrCheckupAccount()) {
       document.querySelector("#checkup-whatsapp").value = checkupPhone;
     }
+    updateSleepHoursDisplay();
     departmentSelect.disabled = isCheckupIdentityLocked();
     employeeSelect.disabled = isCheckupIdentityLocked();
     if (!guestMode && currentEmployeeId) {
@@ -3751,7 +3793,7 @@ async function submitCheckup(event) {
         p_diastolic: payload.diastolic,
         p_temperature_c: payload.temperature_c,
         p_fatigue_level: payload.fatigue_level,
-        p_sleep_quality: payload.sleep_quality,
+        p_sleep_hours: payload.sleep_hours,
         p_symptoms: payload.symptoms,
         p_notes: payload.notes,
         p_measurement_provider: payload.measurement_provider,
@@ -3803,6 +3845,7 @@ async function submitCheckup(event) {
     if (isLinkedAdminHrCheckupAccount()) {
       document.querySelector("#checkup-whatsapp").value = checkupPhone;
     }
+    updateSleepHoursDisplay();
     departmentSelect.disabled = isCheckupIdentityLocked();
     employeeSelect.disabled = isCheckupIdentityLocked();
     if (!guestMode && currentEmployeeId) {
@@ -4094,7 +4137,7 @@ function triggerCsvDownload(items) {
   if (!items?.length) return false;
   const header = [
     "Waktu checkup", "Nama karyawan", "Departemen", "Tekanan sistolik", "Tekanan diastolik",
-    "Suhu (C)", "Kelelahan (1-5)", "Kualitas tidur (1-5)", "Gejala",
+    "Suhu (C)", "Kelelahan (1-5)", "Jumlah jam tidur", "Gejala",
     "Konsumsi obat-obatan dalam 24 jam terakhir", "Konsumsi alkohol dalam 24 jam terakhir",
     "Tenaga medis", "Catatan", "Status",
     "Latitude", "Longitude", "Akurasi lokasi (m)", "Waktu pengambilan lokasi"
@@ -4107,7 +4150,7 @@ function triggerCsvDownload(items) {
     item.diastolic,
     item.temperature_c,
     item.fatigue_level,
-    item.sleep_quality,
+    item.sleep_hours ?? (item.sleep_quality == null ? "" : `${item.sleep_quality}/5 (data lama)`),
     Object.entries(item.symptoms ?? {})
       .filter(([key, selected]) => selected && !Object.values(substanceQuestionKeys).includes(key))
       .map(([key]) => symptomLabels[key] ?? key)
@@ -4857,6 +4900,7 @@ function bindEvents() {
     }
   });
   document.querySelector("#temperature").addEventListener("input", updateTemperatureDisplay);
+  document.querySelector("#sleep-hours")?.addEventListener("input", updateSleepHoursDisplay);
   checkupForm.addEventListener("click", (event) => {
     const button = event.target.closest("[data-blood-pressure-step]");
     if (!button) return;
@@ -5076,17 +5120,17 @@ function bindEvents() {
 }
 async function boot() {
   loadCachedAppSettings();
-  bindEvents();
-  bindPrivacyNoticeEvents();
-  updateTemperatureDisplay();
-  setActiveStep(1);
-  refreshIcons();
-
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("./sw.js").catch((err) => {
       console.warn("ServiceWorker registration failed:", err);
     });
   }
+
+  bindEvents();
+  bindPrivacyNoticeEvents();
+  updateTemperatureDisplay();
+  setActiveStep(1);
+  refreshIcons();
 
   const supabaseFactory = getSupabaseFactory();
   if (!supabaseFactory) {
@@ -5096,7 +5140,12 @@ async function boot() {
     throw new Error("Isi URL dan anon/publishable key Supabase di config.js.");
   }
   client = supabaseFactory(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+      storageKey: "sgt-dcu-privacy-notice-auth"
+    }
   });
   await requestPrivacyNotice();
   client = supabaseFactory(SUPABASE_URL, SUPABASE_ANON_KEY, {

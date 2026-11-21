@@ -247,21 +247,27 @@ export async function removeOfflineItem(id) {
 }
 
 /**
- * Menilai status kelayakan kerja (triage) di sisi client
- * 100% konsisten dengan trigger PostgreSQL evaluate_checkup_readiness()
+ * Menilai status awal di sisi client saat checkup disimpan offline.
+ * Aturannya mengikuti trigger PostgreSQL; status server menjadi hasil final setelah sinkronisasi.
  */
 export function evaluateReadiness(payload) {
   const {
     temperature_c,
     systolic,
     diastolic,
+    sleep_hours,
     symptoms = {}
   } = payload;
 
+  const sleepHours = Number(sleep_hours);
+  if (sleepHours < 3) {
+    return "rest_recommended";
+  }
+
   if (
-    temperature_c >= 38
-    || systolic >= 180
-    || diastolic >= 120
+    temperature_c >= 39
+    || systolic >= 160
+    || diastolic >= 110
     || symptoms.breathing_difficulty
     || symptoms.chest_pain
     || symptoms.fainting
@@ -270,14 +276,17 @@ export function evaluateReadiness(payload) {
   }
 
   if (
-    temperature_c > 37.5
-    || systolic >= 140
-    || diastolic >= 90
-    || systolic < 90
-    || diastolic < 60
+    temperature_c > 38
+    || systolic >= 150
+    || diastolic >= 100
+    || systolic < 100
+    || diastolic < 70
+    || (sleepHours >= 3 && sleepHours <= 5)
     || symptoms.flu_cough
     || symptoms.dizziness
     || symptoms.muscle_pain
+    || symptoms.alcohol_consumption_24h
+    || symptoms.medication_consumption_24h
   ) {
     return "need_observation";
   }

@@ -2,7 +2,7 @@
  * sw.js - Service Worker untuk Offline-First Shell Daily Checkup
  */
 
-const CACHE_NAME = "sgt-dcu-cache-v8";
+const CACHE_NAME = "sgt-dcu-cache-v10";
 
 const STATIC_ASSETS = [
   "./",
@@ -59,6 +59,10 @@ self.addEventListener("fetch", (event) => {
   const request = event.request;
   const url = new URL(request.url);
 
+  if (!["http:", "https:"].includes(url.protocol)) {
+    return;
+  }
+
   // Jangan tangani selain GET (RPC / Supabase API mutasi di-handle oleh Offline Queue)
   if (request.method !== "GET") {
     return;
@@ -77,9 +81,11 @@ self.addEventListener("fetch", (event) => {
         .then((networkResponse) => {
           if (networkResponse && networkResponse.status === 200) {
             const responseClone = networkResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(request, responseClone);
-            });
+            caches.open(CACHE_NAME)
+              .then((cache) => cache.put(request, responseClone))
+              .catch((error) => {
+                console.warn("Could not cache network response:", request.url, error);
+              });
           }
           return networkResponse;
         })

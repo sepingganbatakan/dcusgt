@@ -212,16 +212,15 @@
                   <label class="rating-card"><input type="radio" name="fatigue_level" value="5"><span><i data-lucide="battery"></i><b>5</b><small>Sangat</small></span></label>
                 </div>
               </fieldset>
-              <fieldset class="mt-5">
-                <legend class="field-label">Kualitas tidur</legend>
-                <div class="rating-options mt-2" data-rating="sleep_quality">
-                  <label class="rating-card"><input type="radio" name="sleep_quality" value="1" required><span><i data-lucide="moon-star"></i><b>1</b><small>Buruk</small></span></label>
-                  <label class="rating-card"><input type="radio" name="sleep_quality" value="2"><span><i data-lucide="moon"></i><b>2</b><small>Kurang</small></span></label>
-                  <label class="rating-card"><input type="radio" name="sleep_quality" value="3"><span><i data-lucide="cloud-moon"></i><b>3</b><small>Cukup</small></span></label>
-                  <label class="rating-card"><input type="radio" name="sleep_quality" value="4"><span><i data-lucide="moon"></i><b>4</b><small>Baik</small></span></label>
-                  <label class="rating-card"><input type="radio" name="sleep_quality" value="5"><span><i data-lucide="sparkles"></i><b>5</b><small>Nyenyak</small></span></label>
-                </div>
-              </fieldset>
+              <div class="mt-5 flex items-center justify-between">
+                <label class="field-label" for="sleep-hours">Jumlah jam tidur</label>
+                <span id="sleep-hours-value" class="rounded-lg bg-emerald-50 px-2.5 py-1 text-sm font-bold text-emerald-700">8 jam</span>
+              </div>
+              <input id="sleep-hours" class="temperature-range sleep-hours-range mt-3 w-full" type="range" min="0" max="12" step="0.5" value="8" aria-label="Jumlah jam tidur">
+              <div class="mt-1 flex justify-between text-xs text-slate-500" aria-hidden="true">
+                <span>0 jam</span><span>3 jam</span><span>5 jam</span><span>9 jam</span><span>12 jam</span>
+              </div>
+              <p id="sleep-hours-hint" class="mt-1 text-xs text-slate-500">Geser untuk memilih jumlah jam tidur.</p>
             </div>
             <div id="checkup-step2-navigation" class="grid grid-cols-2 gap-3">
               <button id="checkup-step2-prev" class="secondary-button" type="button" data-prev><i data-lucide="arrow-left"></i> Kembali</button>
@@ -410,7 +409,7 @@
         <div class="mb-5">
           <p class="eyebrow">ADMINISTRASI</p>
           <h1 id="settings-heading" class="mt-1 font-display text-2xl font-extrabold tracking-tight text-slate-900">Pengaturan aplikasi</h1>
-          <p class="mt-1 text-sm leading-5 text-slate-500">Kelola pengaturan aplikasi sesuai izin akun Anda.</p>
+          <p class="mt-1 text-sm leading-5 text-slate-500">Atur visibilitas menu Profile dan Checkup untuk semua akun Admin/HR.</p>
         </div>
         <form id="menu-visibility-form" class="mb-5 space-y-3">
           <div class="panel-card">
@@ -427,24 +426,30 @@
           </div>
           <button id="save-menu-visibility" class="primary-button w-full" type="submit"><i data-lucide="save"></i> Simpan visibilitas menu</button>
         </form>
-        <form id="hr-settings-access-form" class="hidden mb-5 space-y-3">
-          <div>
-            <h2 class="font-display text-lg font-bold text-slate-900">Akses pengaturan HR</h2>
-            <p class="mt-1 text-sm leading-5 text-slate-500">Tentukan apakah HR dapat membuka menu Pengaturan dan memilih pengaturan aplikasi yang boleh diubah.</p>
-          </div>
+        <form id="hr-settings-access-form" class="mb-5 hidden space-y-3">
           <div class="panel-card">
-            <label class="flex items-center justify-between gap-3">
-              <span class="field-label">Aktifkan menu Pengaturan untuk HR</span>
+            <h2 class="font-display text-lg font-bold text-slate-900">Akses pengaturan untuk HR</h2>
+            <p class="mt-1 text-sm leading-5 text-slate-500">Pilih apakah HR dapat membuka Pengaturan dan menentukan pengaturan yang boleh diubah.</p>
+            <label class="mt-4 flex items-center justify-between gap-3">
+              <span class="field-label">Izinkan HR mengakses Pengaturan</span>
               <input id="hr-settings-enabled" class="toggle-input" type="checkbox">
             </label>
-          </div>
-          <div class="panel-card space-y-3">
-            <h3 class="font-semibold text-slate-800">Pengaturan yang boleh diubah HR</h3>
-            <div id="hr-settings-permissions" class="space-y-3">
-              <p class="text-sm text-slate-500">Memuat daftar pengaturan…</p>
+            <div class="mt-4">
+              <p class="field-label">Pengaturan yang boleh diubah HR</p>
+              <div id="hr-settings-permissions" class="mt-3 space-y-3"></div>
             </div>
           </div>
           <button id="save-hr-settings-access" class="primary-button w-full" type="submit"><i data-lucide="save"></i> Simpan akses HR</button>
+        </form>
+        <form id="hr-settings-form" class="mb-5 hidden space-y-3">
+          <div>
+            <h2 class="font-display text-lg font-bold text-slate-900">Pengaturan HR</h2>
+            <p class="mt-1 text-sm leading-5 text-slate-500">Pengaturan yang tersedia ditentukan oleh administrator.</p>
+          </div>
+          <div id="hr-settings-fields" class="space-y-3">
+            <p class="panel-card text-sm text-slate-500">Memuat pengaturan…</p>
+          </div>
+          <button id="save-hr-settings" class="primary-button w-full" type="submit"><i data-lucide="save"></i> Simpan pengaturan</button>
         </form>
         <section id="subdepartment-management" class="mb-5 hidden space-y-4">
           <div>
@@ -504,16 +509,6 @@
             <button id="reload-admin-settings" class="secondary-button w-full" type="button"><i data-lucide="refresh-cw"></i> Muat ulang</button>
             <button id="save-admin-settings" class="primary-button w-full" type="submit"><i data-lucide="save"></i> Simpan</button>
           </div>
-        </form>
-        <form id="hr-settings-form" class="hidden space-y-3">
-          <div class="mb-3">
-            <h2 class="font-display text-lg font-bold text-slate-900">Pengaturan yang diizinkan</h2>
-            <p class="mt-1 text-sm leading-5 text-slate-500">HR hanya dapat mengubah pengaturan yang telah diizinkan oleh admin.</p>
-          </div>
-          <div id="hr-settings-fields" class="space-y-3">
-            <p class="panel-card text-sm text-slate-500">Memuat pengaturan…</p>
-          </div>
-          <button id="save-hr-settings" class="primary-button w-full" type="submit"><i data-lucide="save"></i> Simpan</button>
         </form>
       </section>
 

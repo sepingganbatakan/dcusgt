@@ -242,7 +242,22 @@ button {
   outline: none;
 }
 
-.temperature-range::-webkit-slider-thumb {
+.sleep-hours-range {
+  background: linear-gradient(
+    90deg,
+    #ef4444 0%,
+    #ef4444 21%,
+    #facc15 25%,
+    #a3e635 42%,
+    #22c55e 58%,
+    #22c55e 75%,
+    #3b82f6 88%,
+    #3b82f6 100%
+  );
+}
+
+.temperature-range::-webkit-slider-thumb,
+.sleep-hours-range::-webkit-slider-thumb {
   width: 20px;
   height: 20px;
   appearance: none;
@@ -252,7 +267,8 @@ button {
   box-shadow: 0 1px 5px rgb(15 23 42 / 25%);
 }
 
-.temperature-range::-moz-range-thumb {
+.temperature-range::-moz-range-thumb,
+.sleep-hours-range::-moz-range-thumb {
   width: 15px;
   height: 15px;
   border: 3px solid #fff;
