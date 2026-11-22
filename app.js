@@ -3416,7 +3416,7 @@ function renderHistory() {
       .filter(([key, selected]) => selected && !Object.values(substanceQuestionKeys).includes(key))
       .map(([key]) => symptomLabels[key] ?? key);
     const substanceAnswers = [
-      [substanceQuestionKeys.medication, "Konsumsi obat-obatan dalam 24 jam terakhir"],
+      [substanceQuestionKeys.medication, "Konsumsi obat-obatan yang menyebabkan kantuk dalam 24 jam terakhir"],
       [substanceQuestionKeys.alcohol, "Konsumsi alkohol dalam 24 jam terakhir"]
     ].filter(([key]) => typeof checkup.symptoms?.[key] === "boolean");
     const locationDetails = checkup.location_latitude !== null
@@ -4142,7 +4142,7 @@ function triggerCsvDownload(items) {
   const header = [
     "Waktu checkup", "Nama karyawan", "Departemen", "Tekanan sistolik", "Tekanan diastolik",
     "Suhu (C)", "Kelelahan (1-5)", "Jumlah jam tidur", "Gejala",
-    "Konsumsi obat-obatan dalam 24 jam terakhir", "Konsumsi alkohol dalam 24 jam terakhir",
+    "Konsumsi obat-obatan yang menyebabkan kantuk dalam 24 jam terakhir", "Konsumsi alkohol dalam 24 jam terakhir",
     "Tenaga medis", "Catatan", "Status",
     "Latitude", "Longitude", "Akurasi lokasi (m)", "Waktu pengambilan lokasi"
   ];
