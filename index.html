@@ -409,13 +409,19 @@
         <div class="mb-5">
           <p class="eyebrow">ADMINISTRASI</p>
           <h1 id="settings-heading" class="mt-1 font-display text-2xl font-extrabold tracking-tight text-slate-900">Pengaturan aplikasi</h1>
-          <p class="mt-1 text-sm leading-5 text-slate-500">Atur visibilitas menu Profile dan Checkup untuk semua akun Admin/HR.</p>
+          <p class="mt-1 text-sm leading-5 text-slate-500">Atur visibilitas menu Profile secara terpisah untuk Admin dan HR, serta menu Checkup untuk akun Admin/HR.</p>
         </div>
         <form id="menu-visibility-form" class="mb-5 space-y-3">
           <div class="panel-card">
             <label class="flex items-center justify-between gap-3">
-              <span class="field-label">Tampilkan menu Profile</span>
-              <input id="menu-profile-visible" class="toggle-input" type="checkbox">
+              <span class="field-label">Tampilkan menu Profile untuk Admin</span>
+              <input id="menu-profile-admin-visible" class="toggle-input" type="checkbox">
+            </label>
+          </div>
+          <div class="panel-card">
+            <label class="flex items-center justify-between gap-3">
+              <span class="field-label">Tampilkan menu Profile untuk HR</span>
+              <input id="menu-profile-hr-visible" class="toggle-input" type="checkbox">
             </label>
           </div>
           <div class="panel-card">

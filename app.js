@@ -68,7 +68,7 @@ let hrSettingsAccessConfig = { enabled: false, allowed_settings: [] };
 let hrSettingsAccessConfigLoaded = false;
 let hrSettings = [];
 let hrSettingsLoaded = false;
-let adminHrMenuVisibility = { profile: true, checkup: true };
+let adminHrMenuVisibility = { profile_admin: true, profile_hr: true, checkup: true };
 let adminHrMenuVisibilityLoaded = false;
 let hrEmployeeCreationEnabled = false;
 let linkedAccountEmployeeId = null;
@@ -910,7 +910,8 @@ async function handleHrSettingsAccessSave(event) {
 }
 
 function renderAdminHrMenuVisibility() {
-  document.querySelector("#menu-profile-visible").checked = adminHrMenuVisibility.profile;
+  document.querySelector("#menu-profile-admin-visible").checked = adminHrMenuVisibility.profile_admin;
+  document.querySelector("#menu-profile-hr-visible").checked = adminHrMenuVisibility.profile_hr;
   document.querySelector("#menu-checkup-visible").checked = adminHrMenuVisibility.checkup;
 }
 
@@ -928,13 +929,18 @@ async function loadAdminHrMenuVisibility(forceReload = false) {
   if (
     !data
     || typeof data !== "object"
-    || typeof data.profile !== "boolean"
+    || typeof data.profile_admin !== "boolean"
+    || typeof data.profile_hr !== "boolean"
     || typeof data.checkup !== "boolean"
   ) {
     adminHrMenuVisibilityLoaded = false;
     throw new Error("Supabase mengembalikan konfigurasi visibilitas menu dengan format yang tidak valid.");
   }
-  adminHrMenuVisibility = { profile: data.profile, checkup: data.checkup };
+  adminHrMenuVisibility = {
+    profile_admin: data.profile_admin,
+    profile_hr: data.profile_hr,
+    checkup: data.checkup
+  };
   adminHrMenuVisibilityLoaded = true;
   renderAdminHrMenuVisibility();
 }
@@ -948,7 +954,8 @@ async function handleMenuVisibilitySave(event) {
 
   const button = document.querySelector("#save-menu-visibility");
   const values = {
-    profile: document.querySelector("#menu-profile-visible").checked,
+    profile_admin: document.querySelector("#menu-profile-admin-visible").checked,
+    profile_hr: document.querySelector("#menu-profile-hr-visible").checked,
     checkup: document.querySelector("#menu-checkup-visible").checked
   };
   let saved = false;
@@ -976,7 +983,7 @@ async function handleMenuVisibilitySave(event) {
 
     const activeTab = document.querySelector(".nav-item.active")?.dataset.tabTarget;
     if (
-      (activeTab === "profile" && !values.profile)
+      (activeTab === "profile" && !isProfileMenuVisible())
       || (activeTab === "checkup" && !isLinkedAdminHrCheckupAccount())
     ) {
       setTab("summary", false);
@@ -1151,6 +1158,12 @@ function isAdmin() {
   return ["admin", "hr"].includes(currentProfile?.role);
 }
 
+function isProfileMenuVisible() {
+  if (currentProfile?.role === "admin") return adminHrMenuVisibility.profile_admin;
+  if (currentProfile?.role === "hr") return adminHrMenuVisibility.profile_hr;
+  return false;
+}
+
 function canAddAuthenticatedEmployee() {
   return currentProfile?.role === "admin"
     || (currentProfile?.role === "hr" && hrEmployeeCreationEnabled);
@@ -1235,7 +1248,7 @@ function applyRoleMenuVisibility() {
   const bottomNav = document.querySelector(".bottom-nav");
   const canAccessSettings = currentProfile?.role === "admin"
     || (currentProfile?.role === "hr" && hrSettingsAccessConfig.enabled);
-  profileButton.classList.toggle("hidden", !guestMode && (!isAdmin() || !adminHrMenuVisibility.profile));
+  profileButton.classList.toggle("hidden", !guestMode && !isProfileMenuVisible());
   checkupButton.classList.toggle("hidden", !guestMode && isAdmin() && !isLinkedAdminHrCheckupAccount());
   settingsButton.classList.toggle("hidden", !canAccessSettings);
   bottomNav.classList.toggle(
@@ -4236,7 +4249,7 @@ function setTab(tabName, refreshData = true) {
   ) {
     tabName = "profile";
   }
-  if (!guestMode && tabName === "profile" && (!isAdmin() || !adminHrMenuVisibility.profile)) return;
+  if (!guestMode && tabName === "profile" && !isProfileMenuVisible()) return;
   if (!guestMode && tabName === "checkup" && isAdmin() && !isLinkedAdminHrCheckupAccount()) return;
   if (
     tabName === "settings"
@@ -4337,7 +4350,7 @@ async function initializeApp(user) {
   hrSettingsAccessConfigLoaded = false;
   hrSettings = [];
   hrSettingsLoaded = false;
-  adminHrMenuVisibility = { profile: true, checkup: true };
+  adminHrMenuVisibility = { profile_admin: true, profile_hr: true, checkup: true };
   adminHrMenuVisibilityLoaded = false;
   linkedAccountEmployeeId = null;
   const signoutButton = document.querySelector("#signout-button");
@@ -4497,7 +4510,7 @@ async function initializeGuestApp() {
   guestEmployeeCreationEnabled = false;
   currentEmployeeId = null;
   linkedAccountEmployeeId = null;
-  adminHrMenuVisibility = { profile: true, checkup: true };
+  adminHrMenuVisibility = { profile_admin: true, profile_hr: true, checkup: true };
   adminHrMenuVisibilityLoaded = false;
   document.querySelector(".bottom-nav").style.removeProperty("grid-template-columns");
   document.querySelector("#admin-settings-form").classList.add("hidden");
