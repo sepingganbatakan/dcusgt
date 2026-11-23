@@ -7,6 +7,7 @@
     "build:css": "npx -y tailwindcss@3 -i ./tailwind-input.css -o ./tailwind.min.css --minify"
   },
   "devDependencies": {
+    "supabase": "^3.2.0",
     "tailwindcss": "^3.4.19"
   }
 }
