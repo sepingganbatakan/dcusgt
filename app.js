@@ -934,7 +934,10 @@ async function loadAdminHrMenuVisibility(forceReload = false) {
     || typeof data.checkup !== "boolean"
   ) {
     adminHrMenuVisibilityLoaded = false;
-    throw new Error("Supabase mengembalikan konfigurasi visibilitas menu dengan format yang tidak valid.");
+    throw new Error(
+      "Konfigurasi visibilitas menu di Supabase masih menggunakan format lama atau tidak valid. " +
+      "Jalankan ulang seluruh migrations/admin_hr_menu_visibility.sql di SQL Editor Supabase."
+    );
   }
   adminHrMenuVisibility = {
     profile_admin: data.profile_admin,
