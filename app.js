@@ -98,6 +98,7 @@ let activeTimezone = (typeof APP_TIMEZONE === "string" && APP_TIMEZONE.trim())
   ? APP_TIMEZONE.trim()
   : "Asia/Jakarta";
 let waNotificationsEnabled = false;
+let waEmployeeTemplate = "";
 let checkupLocationEnabled = false;
 let measurementProviderEnabled = false;
 let measurementProviderNames = [];
@@ -171,6 +172,18 @@ async function syncWhatsAppNotificationSetting() {
     waNotificationsEnabled = data;
   } catch (err) {
     console.warn("Could not sync WhatsApp notification setting; keeping the current value:", err);
+  }
+}
+
+async function syncWAEmployeeTemplate() {
+  if (!client) return;
+  try {
+    const { data, error } = await client.rpc("get_wa_template_employee");
+    if (!error && typeof data === "string" && data.trim()) {
+      waEmployeeTemplate = data;
+    }
+  } catch (err) {
+    console.warn("Could not sync WhatsApp employee template; using the default template:", err);
   }
 }
 
@@ -519,6 +532,7 @@ async function syncBootstrapSettings() {
   await Promise.allSettled([
     syncAppTimezone(),
     syncWhatsAppNotificationSetting(),
+    syncWAEmployeeTemplate(),
     syncCheckupLocationSetting(),
     syncMeasurementProviderSetting(),
     syncSubstanceQuestionSettings(),
@@ -529,9 +543,9 @@ async function syncBootstrapSettings() {
 }
 
 const statusDetails = {
-  fit_to_work: { label: "Fit to Work", pill: "status-fit", result: "result-fit", icon: "shield-check" },
-  need_observation: { label: "Need Observation", pill: "status-observe", result: "result-observe", icon: "eye" },
-  rest_recommended: { label: "Rest Recommended", pill: "status-rest", result: "result-rest", icon: "heart-pulse" }
+  fit_to_work: { label: "Fit Bekerja", pill: "status-fit", result: "result-fit", icon: "shield-check" },
+  need_observation: { label: "Perlu Evaluasi Medis", pill: "status-observe", result: "result-observe", icon: "eye" },
+  rest_recommended: { label: "Tidak Fit Bekerja", pill: "status-rest", result: "result-rest", icon: "heart-pulse" }
 };
 
 const symptomLabels = {
@@ -1611,7 +1625,7 @@ function persistGuestProfile(profile, announce = false) {
 }
 
 function populateDepartmentSelect(select, selectedId = "") {
-  select.innerHTML = '<option value="">Pilih departemen</option>';
+  select.innerHTML = '<option value="">Pilih fungsi</option>';
   for (const department of departments) {
     const option = document.createElement("option");
     option.value = department.id;
@@ -1651,7 +1665,7 @@ function updateProfileEmployeeOptions(selectedId = "") {
     select.append(option);
   }
   if (!departmentId && !showAllEmployees) {
-    select.innerHTML = '<option value="">Pilih departemen terlebih dahulu</option>';
+    select.innerHTML = '<option value="">Pilih fungsi terlebih dahulu</option>';
   } else if (!select.options.length || (select.options.length === 1 && !select.options[0].value)) {
     select.innerHTML = '<option value="">Belum ada karyawan terdaftar</option>';
   }
@@ -1975,10 +1989,10 @@ function openEmployeeModal(departmentId, canAddAsGuest) {
     document.querySelector("#new-employee-subdepartment"),
     departmentId,
     "",
-    "Tanpa subdepartemen"
+    "Tanpa subfungsi"
   );
   const departmentName = departments.find((department) => department.id === departmentId)?.name ?? "";
-  document.querySelector("#new-employee-department").textContent = `Departemen: ${departmentName}`;
+  document.querySelector("#new-employee-department").textContent = `Fungsi: ${departmentName}`;
   employeeModal.showModal();
 }
 
@@ -2038,7 +2052,7 @@ function validateSubstanceQuestions() {
 function validateStep(step) {
   if (step === 1) {
     if (!departmentSelect.value) {
-      showToast("Pilih departemen terlebih dahulu.", true);
+      showToast("Pilih fungsi terlebih dahulu.", true);
       return false;
     }
     if (!employeeSelect.value) {
@@ -2159,7 +2173,7 @@ function renderDepartmentTabs() {
   });
   container.appendChild(allBtn);
 
-  // 2. Tab untuk masing-masing departemen
+  // 2. Tab untuk masing-masing fungsi
   for (const dept of departments) {
     const isActive = currentCheckupTab === dept.id;
     const count = employees.filter((e) => e.department_id === dept.id && e.is_active).length;
@@ -2247,7 +2261,7 @@ function renderEmployeeList(departmentId = currentCheckupTab) {
     if (checkupSearchQuery) {
       listContainer.innerHTML = `<div class="p-4 text-center text-xs text-slate-400">Tidak ada karyawan yang cocok dengan "${escapeHtml(checkupSearchQuery)}"</div>`;
     } else {
-      listContainer.innerHTML = '<div class="p-4 text-center text-xs text-slate-400">Belum ada karyawan terdaftar di departemen ini</div>';
+      listContainer.innerHTML = '<div class="p-4 text-center text-xs text-slate-400">Belum ada karyawan terdaftar di fungsi ini</div>';
     }
     return;
   }
@@ -2367,7 +2381,7 @@ function renderProfileDepartmentTabs() {
   });
   container.appendChild(allBtn);
 
-  // 2. Tab masing-masing departemen
+  // 2. Tab masing-masing fungsi
   for (const dept of departments) {
     const isActive = currentProfileTab === dept.id;
     const count = employees.filter((e) => e.department_id === dept.id && e.is_active).length;
@@ -2459,7 +2473,7 @@ function renderProfileEmployeeList(departmentId = currentProfileTab) {
     if (profileSearchQuery) {
       listContainer.innerHTML = `<div class="p-4 text-center text-xs text-slate-400">Tidak ada karyawan yang cocok dengan "${escapeHtml(profileSearchQuery)}"</div>`;
     } else {
-      listContainer.innerHTML = '<div class="p-4 text-center text-xs text-slate-400">Belum ada karyawan terdaftar di departemen ini</div>';
+      listContainer.innerHTML = '<div class="p-4 text-center text-xs text-slate-400">Belum ada karyawan terdaftar di fungsi ini</div>';
     }
     return;
   }
@@ -2571,7 +2585,7 @@ function updateEmployeeOptions() {
   }
   employeeSelect.disabled = isCheckupIdentityLocked();
   if (!departmentId && !showAllEmployees) {
-    employeeSelect.innerHTML = '<option value="">Pilih departemen terlebih dahulu</option>';
+    employeeSelect.innerHTML = '<option value="">Pilih fungsi terlebih dahulu</option>';
   } else if (departmentEmployees.length === 0) {
     employeeSelect.innerHTML = '<option value="">Belum ada karyawan terdaftar</option>';
   }
@@ -2642,7 +2656,7 @@ async function loadDepartments() {
   const options = departments.map((department) =>
     `<option value="${escapeHtml(department.id)}">${escapeHtml(department.name)}</option>`
   ).join("");
-  departmentSelect.innerHTML = '<option value="">Pilih departemen</option>' + options;
+  departmentSelect.innerHTML = '<option value="">Pilih fungsi</option>' + options;
   if (departments.some((department) => department.id === selectedDepartment)) {
     departmentSelect.value = selectedDepartment;
   }
@@ -2650,7 +2664,7 @@ async function loadDepartments() {
   const historyDepartment = document.querySelector("#history-department");
   historyDepartment.innerHTML = isDepartmentRepresentative()
     ? options
-    : '<option value="">Semua departemen</option>' + options;
+    : '<option value="">Semua fungsi</option>' + options;
   historyDepartment.disabled = isDepartmentRepresentative();
   if (isDepartmentRepresentative() && departments.some((department) => department.id === currentDepartmentId)) {
     historyDepartment.value = currentDepartmentId;
@@ -2667,7 +2681,7 @@ function subdepartmentsForDepartment(departmentId) {
   return subdepartments.filter((subdepartment) => subdepartment.department_id === departmentId);
 }
 
-function populateSubdepartmentSelect(select, departmentId, selectedId = "", emptyLabel = "Tanpa subdepartemen") {
+function populateSubdepartmentSelect(select, departmentId, selectedId = "", emptyLabel = "Tanpa subfungsi") {
   if (!select) return;
   select.replaceChildren(new Option(emptyLabel, ""));
   for (const subdepartment of subdepartmentsForDepartment(departmentId)) {
@@ -2689,7 +2703,7 @@ function renderSubdepartmentControls() {
   const selectedSubdepartmentId = supervisorsSubdepartment.value;
   const selectedEmployeeId = employeeSelectForAssignment.value;
 
-  departmentSelectForSubdepartment.replaceChildren(new Option("Pilih departemen", ""));
+  departmentSelectForSubdepartment.replaceChildren(new Option("Pilih fungsi", ""));
   for (const department of departments) {
     departmentSelectForSubdepartment.add(new Option(department.name, department.id));
   }
@@ -2697,7 +2711,7 @@ function renderSubdepartmentControls() {
     departmentSelectForSubdepartment.value = selectedDepartmentId;
   }
 
-  supervisorsSubdepartment.replaceChildren(new Option("Pilih subdepartemen", ""));
+  supervisorsSubdepartment.replaceChildren(new Option("Pilih subfungsi", ""));
   for (const subdepartment of subdepartments) {
     const departmentName = departments.find((department) => department.id === subdepartment.department_id)?.name ?? "";
     supervisorsSubdepartment.add(new Option(`${departmentName} — ${subdepartment.name}`, subdepartment.id));
@@ -2720,13 +2734,13 @@ function renderSubdepartmentControls() {
     employeeSubdepartmentSelect,
     selectedEmployee?.department_id,
     selectedEmployee?.sub_department_id ?? "",
-    selectedEmployee ? "Tanpa subdepartemen" : "Pilih karyawan terlebih dahulu"
+    selectedEmployee ? "Tanpa subfungsi" : "Pilih karyawan terlebih dahulu"
   );
   populateSubdepartmentSelect(
     document.querySelector("#new-employee-subdepartment"),
     departmentSelect.value,
     "",
-    "Tanpa subdepartemen"
+    "Tanpa subfungsi"
   );
 
   renderSubdepartmentSupervisorList();
@@ -2736,7 +2750,7 @@ function renderSubdepartmentSupervisorList() {
   const list = document.querySelector("#subdepartment-supervisor-list");
   if (!list) return;
   if (subdepartments.length === 0) {
-    list.innerHTML = '<p class="text-sm text-slate-500">Belum ada subdepartemen.</p>';
+    list.innerHTML = '<p class="text-sm text-slate-500">Belum ada subfungsi.</p>';
     return;
   }
 
@@ -2780,7 +2794,7 @@ async function saveSubdepartment(event) {
   const name = document.querySelector("#subdepartment-name").value.trim();
   const button = document.querySelector("#save-subdepartment");
   if (!departmentId || !name) {
-    showToast("Departemen dan nama subdepartemen wajib diisi.", true);
+    showToast("Fungsi dan nama subfungsi wajib diisi.", true);
     return;
   }
 
@@ -2790,10 +2804,10 @@ async function saveSubdepartment(event) {
     if (error) throw error;
     document.querySelector("#subdepartment-form").reset();
     await loadSubdepartments();
-    showToast("Subdepartemen berhasil ditambahkan.");
+    showToast("Subfungsi berhasil ditambahkan.");
   } catch (error) {
     console.error("Subdepartment save failed:", error);
-    showToast(`Gagal menyimpan subdepartemen: ${error.message}`, true);
+    showToast(`Gagal menyimpan subfungsi: ${error.message}`, true);
   } finally {
     setBusy(button, false);
   }
@@ -2807,7 +2821,7 @@ async function saveSupervisor(event) {
   const whatsappNumber = normalizeSupervisorPhone(document.querySelector("#supervisor-whatsapp").value);
   const button = document.querySelector("#save-supervisor");
   if (!subDepartmentId || !fullName || !/^62\d{8,13}$/.test(whatsappNumber)) {
-    showToast("Pilih subdepartemen, isi nama, dan masukkan nomor WhatsApp Indonesia yang valid.", true);
+    showToast("Pilih subfungsi, isi nama, dan masukkan nomor WhatsApp Indonesia yang valid.", true);
     return;
   }
 
@@ -2852,10 +2866,10 @@ async function saveEmployeeSubdepartment(event) {
     const employee = employees.find((item) => item.id === data.id);
     if (employee) employee.sub_department_id = data.sub_department_id;
     renderSubdepartmentControls();
-    showToast("Penetapan subdepartemen karyawan berhasil disimpan.");
+    showToast("Penetapan subfungsi karyawan berhasil disimpan.");
   } catch (error) {
     console.error("Employee subdepartment assignment failed:", error);
-    showToast(`Gagal menyimpan penetapan subdepartemen: ${error.message}`, true);
+    showToast(`Gagal menyimpan penetapan subfungsi: ${error.message}`, true);
   } finally {
     setBusy(button, false);
   }
@@ -2867,7 +2881,7 @@ async function handleSubdepartmentManagerClick(event) {
   const { subdepartmentAction: action, id } = button.dataset;
   const isSubdepartment = action === "remove-subdepartment";
   const confirmed = window.confirm(isSubdepartment
-    ? "Hapus subdepartemen ini? Subdepartemen yang masih digunakan oleh karyawan tidak dapat dihapus."
+    ? "Hapus subfungsi ini? Subfungsi yang masih digunakan oleh karyawan tidak dapat dihapus."
     : "Hapus kontak pengawas ini?");
   if (!confirmed) return;
 
@@ -2877,7 +2891,7 @@ async function handleSubdepartmentManagerClick(event) {
     const { error } = await client.from(table).delete().eq("id", id);
     if (error) throw error;
     await loadSubdepartments();
-    showToast(isSubdepartment ? "Subdepartemen berhasil dihapus." : "Kontak pengawas berhasil dihapus.");
+    showToast(isSubdepartment ? "Subfungsi berhasil dihapus." : "Kontak pengawas berhasil dihapus.");
   } catch (error) {
     console.error("Subdepartment data deletion failed:", error);
     showToast(`Gagal menghapus data: ${error.message}`, true);
@@ -3523,7 +3537,7 @@ function renderMissingDcuModal() {
   if (canFilterByDepartment) {
     const hasSelectedDepartment = departments.some((department) => department.id === selectedMissingDcuDepartmentId);
     if (selectedMissingDcuDepartmentId && !hasSelectedDepartment) selectedMissingDcuDepartmentId = "";
-    departmentFilter.innerHTML = '<option value="">Semua departemen</option>' + departments.map((department) =>
+    departmentFilter.innerHTML = '<option value="">Semua fungsi</option>' + departments.map((department) =>
       `<option value="${escapeHtml(department.id)}">${escapeHtml(department.name)}</option>`
     ).join("");
     departmentFilter.value = selectedMissingDcuDepartmentId;
@@ -3587,25 +3601,97 @@ function collectCheckup() {
   };
 }
 
+function formatWhatsAppAbnormalValue(value, isAbnormal) {
+  return isAbnormal ? `*${value}*` : value;
+}
+
+function renderWhatsAppTemplate(template, variables) {
+  return Object.entries(variables).reduce(
+    (text, [key, value]) => text.replaceAll(`{{${key}}}`, value ?? ""),
+    template
+  );
+}
+
 function reportText(payload, status, checkedAt, employeeName, departmentName) {
-  const symptomNames = Object.entries(payload.symptoms)
+  const triggerSymptoms = new Set([
+    "flu_cough",
+    "dizziness",
+    "muscle_pain",
+    "alcohol_consumption_24h",
+    "medication_consumption_24h",
+    "breathing_difficulty",
+    "chest_pain",
+    "fainting"
+  ]);
+  const symptomNames = Object.entries(payload.symptoms || {})
     .filter(([key, selected]) => selected && !Object.values(substanceQuestionKeys).includes(key))
-    .map(([key]) => symptomLabels[key]);
-  return [
-    "*Laporan Daily Checkup*",
-    `Nama: ${employeeName}`,
-    `Departemen: ${departmentName}`,
-    `Waktu: ${formatDate(checkedAt)}`,
-    `Status: ${statusDetails[status].label}`,
-    `Tekanan darah: ${payload.systolic}/${payload.diastolic} mmHg`,
-    `Suhu: ${payload.temperature_c.toFixed(1)}°C`,
-    `Kelelahan: ${payload.fatigue_level}/5`,
-    `Jumlah jam tidur: ${payload.sleep_hours} jam`,
-    `Gejala: ${symptomNames.length ? symptomNames.join(", ") : "Tidak ada yang dipilih"}`,
-    payload.measurement_provider ? `Tenaga medis: ${payload.measurement_provider}` : "",
-    payload.notes ? `Catatan: ${payload.notes}` : "",
-    "_Hasil ini bukan diagnosis medis._"
-  ].filter(Boolean).join("\n");
+    .map(([key]) => {
+      const label = symptomLabels[key];
+      return label ? (triggerSymptoms.has(key) ? `*${label}*` : label) : null;
+    })
+    .filter(Boolean);
+
+  const systolic = Number(payload.systolic);
+  const diastolic = Number(payload.diastolic);
+  const temperature = Number(payload.temperature_c);
+  const sleepHours = Number(payload.sleep_hours);
+
+  const formattedSystolic = formatWhatsAppAbnormalValue(
+    String(payload.systolic),
+    Number.isFinite(systolic) && (systolic >= 150 || systolic < 100)
+  );
+  const formattedDiastolic = formatWhatsAppAbnormalValue(
+    String(payload.diastolic),
+    Number.isFinite(diastolic) && (diastolic >= 100 || diastolic < 70)
+  );
+  const formattedTemperature = formatWhatsAppAbnormalValue(
+    temperature.toFixed(1),
+    Number.isFinite(temperature) && temperature > 38
+  );
+  const formattedSleepHours = formatWhatsAppAbnormalValue(
+    sleepHours.toFixed(1).replace(/\.0$/, ""),
+    Number.isFinite(sleepHours) && (sleepHours < 3 || (sleepHours >= 3 && sleepHours <= 5))
+  );
+
+  let instructions = "";
+  if (status === "fit_to_work") {
+    instructions = "Anda dinyatakan fit untuk beraktivitas. Tetap patuhi protokol K3 dan utamakan keselamatan kerja.";
+  } else if (status === "need_observation") {
+    instructions = "Kondisi Anda memerlukan pemantauan/observasi. Harap berhati-hati, pantau kondisi fisik, dan laporkan ke atasan atau tim medis jika keluhan berlanjut.";
+  } else {
+    instructions = "Kondisi Anda disarankan untuk beristirahat. Harap segera melapor kepada atasan langsung atau fasilitas kesehatan kerja setempat dan tidak memaksakan diri bekerja.";
+  }
+
+  const template = waEmployeeTemplate?.trim() || `*HASIL DAILY CHECKUP HARIAN*
+Halo {{employee_name}}, terima kasih telah mengisi pemeriksaan kesehatan harian.
+
+• Status Kesiapan: *{{readiness_status}}*
+• Tanggal & Waktu: {{checked_at}}
+• Tekanan Darah: {{systolic}}/{{diastolic}} mmHg
+• Suhu Tubuh: {{temperature}}°C
+• Kelelahan: {{fatigue_level}}/5
+• Jumlah Jam Tidur: {{sleep_hours}} jam
+• Gejala: {{symptoms}}
+• Catatan: {{notes}}
+
+*Petunjuk K3:*
+{{instructions}}`;
+
+  return renderWhatsAppTemplate(template, {
+    employee_name: employeeName,
+    department_name: departmentName,
+    sub_department_name: "-",
+    readiness_status: statusDetails[status]?.label ?? status,
+    checked_at: formatDate(checkedAt),
+    systolic: formattedSystolic,
+    diastolic: formattedDiastolic,
+    temperature: formattedTemperature,
+    fatigue_level: String(payload.fatigue_level),
+    sleep_hours: formattedSleepHours,
+    symptoms: symptomNames.length ? symptomNames.join(", ") : "Tidak ada keluhan",
+    notes: payload.notes?.trim() || "-",
+    instructions
+  });
 }
 
 function showResult(payload, status, checkedAt, isOffline = false) {
@@ -3632,7 +3718,7 @@ function showResult(payload, status, checkedAt, isOffline = false) {
   resultCard.innerHTML = `<div class="flex items-start gap-3">
     <span class="status-pill ${detail.pill}"><i data-lucide="${detail.icon}"></i></span>
     <div class="min-w-0 flex-1">
-      <p class="text-xs font-semibold text-slate-500">STATUS KESIAPAN HARIAN</p>
+      <p class="text-xs font-semibold text-slate-500">STATUS KESEHATAN PEKERJA</p>
       <h2 class="mt-1 font-display text-xl font-extrabold text-slate-900">${detail.label}</h2>
       <p class="mt-1 text-xs text-slate-500">${escapeHtml(employeeName)} · ${escapeHtml(formatDate(checkedAt))}</p>
     </div>
@@ -3641,9 +3727,9 @@ function showResult(payload, status, checkedAt, isOffline = false) {
   <p class="mt-3 text-xs leading-5 text-slate-600">${status === "rest_recommended"
     ? urgentSymptoms
       ? "Cari pertolongan medis segera untuk gejala seperti sesak napas, nyeri dada, atau pingsan."
-      : "Pertimbangkan untuk beristirahat dan hubungi tenaga kesehatan."
+      : "Anda tidak diperkenankan bekerja, segera hubungi atasan dan petugas medis."
     : status === "need_observation"
-      ? "Pantau kondisi Anda dan ikuti prosedur kesehatan di tempat kerja."
+      ? "Pantau kondisi Anda,  segera hubungi petugas medis untuk evaluasi lebih lanjut."
       : "Tetap jaga kesehatan dan ikuti prosedur keselamatan kerja."}</p>
   ${copyReportButtonHtml}`;
   resultCard.dataset.report = text;
@@ -3986,14 +4072,14 @@ async function addEmployee(event) {
     ? document.querySelector("#new-employee-active").checked
     : true;
   if (!departmentId || !name) {
-    showToast("Departemen dan nama karyawan wajib diisi.", true);
+    showToast("Fungsi dan nama karyawan wajib diisi.", true);
     return;
   }
   if (
     employeeMetadata.sub_department_id
     && !subdepartmentsForDepartment(departmentId).some((item) => item.id === employeeMetadata.sub_department_id)
   ) {
-    showToast("Subdepartemen tidak sesuai dengan departemen karyawan.", true);
+    showToast("Subfungsi tidak sesuai dengan fungsi karyawan.", true);
     return;
   }
 
@@ -4156,7 +4242,7 @@ function downloadCsvRows(rows, filename) {
 function triggerCsvDownload(items) {
   if (!items?.length) return false;
   const header = [
-    "Waktu checkup", "Nama karyawan", "Departemen", "Tekanan sistolik", "Tekanan diastolik",
+    "Waktu checkup", "Nama karyawan", "Fungsi", "Tekanan sistolik", "Tekanan diastolik",
     "Suhu (C)", "Kelelahan (1-5)", "Jumlah jam tidur", "Gejala",
     "Konsumsi obat-obatan yang menyebabkan kantuk dalam 24 jam terakhir", "Konsumsi alkohol dalam 24 jam terakhir",
     "Tenaga medis", "Catatan", "Status",
@@ -4201,7 +4287,7 @@ function exportMissingDcuCsv() {
   }
   const departmentsById = new Map(departments.map((department) => [department.id, department.name]));
   const rows = [
-    ["Nama Karyawan", "Departemen", "Status Pekerja", "Pola Kerja"],
+    ["Nama Karyawan", "Fungsi", "Status Pekerja", "Pola Kerja"],
     ...missingEmployees.map((employee) => [
       employee.full_name,
       departmentsById.get(employee.department_id) ?? "",
@@ -4419,7 +4505,7 @@ async function initializeApp(user) {
     if (departmentResult.error) throw departmentResult.error;
     currentDepartmentId = departmentResult.data;
     if (!currentDepartmentId) {
-      throw new Error("Akun perwakilan belum ditautkan ke departemen. Hubungi administrator.");
+      throw new Error("Akun perwakilan belum ditautkan ke fungsi. Hubungi administrator.");
     }
   }
   loginScreen.classList.add("hidden");
@@ -4469,7 +4555,7 @@ async function initializeApp(user) {
     .on("postgres_changes", { event: "*", schema: "public", table: "departments" }, () => {
       loadDepartments().then(loadEmployees).then(loadSubdepartments).catch((error) => {
         console.error("Realtime department refresh failed:", error);
-        showToast(`Gagal memperbarui departemen: ${error.message}`, true);
+        showToast(`Gagal memperbarui fungsi: ${error.message}`, true);
       });
     })
     .on("postgres_changes", { event: "*", schema: "public", table: "employees" }, () => {
@@ -4486,7 +4572,7 @@ async function initializeApp(user) {
     .on("postgres_changes", { event: "*", schema: "public", table: "sub_departments" }, () => {
       loadSubdepartments().catch((error) => {
         console.error("Realtime subdepartment refresh failed:", error);
-        showToast(`Gagal memperbarui subdepartemen: ${error.message}`, true);
+        showToast(`Gagal memperbarui subfungsi: ${error.message}`, true);
       });
     })
     .on("postgres_changes", { event: "*", schema: "public", table: "sub_department_supervisors" }, () => {
@@ -4868,7 +4954,7 @@ function bindEvents() {
     const employeeId = document.querySelector("#profile-employee").value;
     const whatsapp = document.querySelector("#profile-whatsapp").value;
     if (!employees.some((employee) => employee.id === employeeId && employee.department_id === departmentId)) {
-      showToast("Pilih nama karyawan yang sesuai dengan departemen.", true);
+      showToast("Pilih nama karyawan yang sesuai dengan fungsi.", true);
       return;
     }
     if (!isValidWhatsApp(whatsapp)) {
@@ -5008,7 +5094,7 @@ function bindEvents() {
     }
     const departmentId = document.querySelector("#profile-department").value;
     if (!departmentId) {
-      showToast("Pilih departemen terlebih dahulu.", true);
+      showToast("Pilih fungsi terlebih dahulu.", true);
       return;
     }
     departmentSelect.value = departmentId;
@@ -5041,7 +5127,7 @@ function bindEvents() {
   document.querySelector("#history-department").addEventListener("change", () => {
     loadCheckups().catch((error) => {
       console.error("Department filter failed:", error);
-      showToast(`Gagal memuat filter departemen: ${error.message}`, true);
+      showToast(`Gagal memuat filter fungsi: ${error.message}`, true);
     });
   });
   document.querySelector("#history-readiness").addEventListener("change", () => {

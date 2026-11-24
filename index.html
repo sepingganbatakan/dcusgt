@@ -105,7 +105,7 @@
           <p class="eyebrow">PEMERIKSAAN HARIAN</p>
           <h1 id="checkup-heading" class="mt-1 font-display text-2xl font-extrabold tracking-tight text-slate-900">Bagaimana kondisi Anda?</h1>
           <p class="mt-1 text-sm text-slate-500">Isi checkup singkat sebelum memulai aktivitas.</p>
-          <p id="guest-mode-notice" class="mt-3 hidden rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">Mode tanpa login aktif. Pilihan nama karyawan dapat dilihat publik; hasil checkup tidak ditampilkan di riwayat pada perangkat ini.</p>
+          <p id="guest-mode-notice" class="mt-3 hidden rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">Mode tanpa login aktif. Pilihan nama pekerja dapat dilihat publik; hasil checkup tidak ditampilkan di riwayat pada perangkat ini.</p>
         </div>
         <div id="checkup-identity-summary" class="mb-4 hidden items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
           <p class="min-w-0 text-xs leading-5 text-slate-600"><span class="font-semibold text-slate-800">Profil tersimpan:</span> <span id="checkup-identity-name"></span><span class="mx-1 text-slate-400">·</span><span id="checkup-identity-department"></span></p>
@@ -133,24 +133,24 @@
             <div class="panel-card">
               <div class="mb-4 flex items-center gap-2"><i data-lucide="user-round" class="section-icon"></i><h2 class="section-title">Identitas</h2></div>
               <div id="checkup-identity-controls">
-              <label class="field-label" id="department-tabs-label" for="department-select">Departemen</label>
+              <label class="field-label" id="department-tabs-label" for="department-select">Fungsi</label>
               <div id="department-tabs-wrap" class="department-tabs-wrap mt-2">
                 <div id="department-tabs" class="department-tabs flex gap-2 overflow-x-auto pb-1 scrollbar-none" role="tablist" aria-labelledby="department-tabs-label">
-                  <!-- Tab departemen diisi dinamis oleh JavaScript -->
+                  <!-- Tab fungsi diisi dinamis oleh JavaScript -->
                 </div>
               </div>
               <select id="department-select" class="sr-only" required aria-hidden="true" tabindex="-1">
-                <option value="">Pilih departemen</option>
+                <option value="">Pilih fungsi</option>
               </select>
 
               <div class="mt-4">
                 <div class="flex items-center justify-between gap-2 mb-2">
-                  <label class="field-label" id="employee-list-label" for="employee-select">Nama karyawan <span id="employee-count-badge" class="font-normal text-slate-400"></span></label>
-                  <button id="open-employee-modal" class="secondary-button min-h-[36px] py-1 gap-1 px-2.5 text-[11px]" type="button" aria-label="Tambah karyawan baru" title="Tambah karyawan"><i data-lucide="user-plus"></i>Tambah</button>
+                  <label class="field-label" id="employee-list-label" for="employee-select">Nama pekerja <span id="employee-count-badge" class="font-normal text-slate-400"></span></label>
+                  <button id="open-employee-modal" class="secondary-button min-h-[36px] py-1 gap-1 px-2.5 text-[11px]" type="button" aria-label="Tambah pekerja baru" title="Tambah pekerja"><i data-lucide="user-plus"></i>Tambah</button>
                 </div>
                 <div id="employee-search-wrap" class="employee-search-wrap mb-2">
                   <i data-lucide="search" class="employee-search-icon"></i>
-                  <input id="employee-search" type="search" class="employee-search-input" placeholder="Cari nama karyawan..." autocomplete="off">
+                  <input id="employee-search" type="search" class="employee-search-input" placeholder="Cari nama pekerja..." autocomplete="off">
                   <button id="employee-search-clear" type="button" class="employee-search-clear hidden" aria-label="Hapus pencarian"><i data-lucide="x"></i></button>
                 </div>
                 <div id="employee-list-scroll-wrap" class="employee-list-scroll-wrap overflow-y-auto rounded-xl border border-slate-200 bg-slate-50/50 p-1.5" style="--visible-limit: 4;">
@@ -158,9 +158,9 @@
                     <!-- Kartu nama pekerja diisi dinamis oleh JavaScript -->
                   </div>
                 </div>
-                <p id="employee-scroll-hint" class="mt-1.5 flex items-center gap-1 text-[11px] text-slate-400 hidden"><i data-lucide="chevrons-down" class="h-3.5 w-3.5"></i> Scroll ke bawah untuk memilih nama karyawan lainnya</p>
+                <p id="employee-scroll-hint" class="mt-1.5 flex items-center gap-1 text-[11px] text-slate-400 hidden"><i data-lucide="chevrons-down" class="h-3.5 w-3.5"></i> Scroll ke bawah untuk memilih nama pekerja lainnya</p>
                 <select id="employee-select" class="sr-only" required aria-hidden="true" tabindex="-1">
-                  <option value="">Pilih departemen terlebih dahulu</option>
+                  <option value="">Pilih fungsi terlebih dahulu</option>
                 </select>
               </div>
               <p id="employee-hint" class="mt-2 text-xs leading-5 text-slate-500"></p>
@@ -305,15 +305,15 @@
             <label><span class="field-label">Dari tanggal</span><input id="filter-from" class="field-input mt-2" type="date"></label>
             <label><span class="field-label">Sampai tanggal</span><input id="filter-to" class="field-input mt-2" type="date"></label>
           </div>
-          <label id="history-department-wrap" class="mt-3 block"><span class="field-label">Departemen</span>
-            <select id="history-department" class="field-input mt-2"><option value="">Semua departemen</option></select>
+          <label id="history-department-wrap" class="mt-3 block"><span class="field-label">Fungsi</span>
+            <select id="history-department" class="field-input mt-2"><option value="">Semua fungsi</option></select>
           </label>
           <label class="mt-3 block"><span class="field-label">Status kesiapan</span>
             <select id="history-readiness" class="field-input mt-2">
               <option value="">Semua status</option>
-              <option value="fit_to_work">Fit to Work</option>
-              <option value="need_observation">Perlu observasi</option>
-              <option value="rest_recommended">Istirahat disarankan</option>
+              <option value="fit_to_work">Fit Bekerja</option>
+              <option value="need_observation">Perlu Evaluasi Medis</option>
+              <option value="rest_recommended">Tidak Fit Bekerja</option>
             </select>
           </label>
           <button id="apply-filters" class="secondary-button mt-4 w-full" type="button"><i data-lucide="list-filter"></i> Terapkan filter</button>
@@ -334,7 +334,7 @@
           <button id="daily-coverage-card" class="stat-card daily-coverage-card summary-filter-card col-span-2 w-full text-left" data-summary-filter="today" type="button" aria-label="Lihat riwayat checkup hari ini">
             <div class="flex items-start justify-between gap-3">
               <div>
-                <p class="stat-label mt-0">Checkup hari ini / karyawan aktif<span id="stat-active-department" class="hidden"></span></p>
+                <p class="stat-label mt-0">Checkup hari ini / pekerja aktif<span id="stat-active-department" class="hidden"></span></p>
                 <p class="coverage-value"><span id="stat-today-checkups">—</span><span class="coverage-divider">/</span><span id="stat-active-employees" class="coverage-total">—</span></p>
               </div>
               <span class="stat-icon blue"><i data-lucide="clipboard-check"></i></span>
@@ -343,19 +343,19 @@
               <div class="mb-1.5 flex items-center justify-between text-[10px] font-semibold text-slate-500">
                 <span>Partisipasi checkup hari ini</span><span id="stat-coverage-percent">—</span>
               </div>
-              <div class="h-1.5 overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-label="Persentase karyawan yang sudah checkup" aria-valuemin="0" aria-valuemax="100">
+              <div class="h-1.5 overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-label="Persentase pekerja yang sudah checkup" aria-valuemin="0" aria-valuemax="100">
                 <div id="stat-coverage-bar" class="h-full rounded-full bg-blue-600 transition-all duration-300" style="width:0%"></div>
               </div>
             </div>
           </button>
-          <button id="missing-dcu-card" class="stat-card summary-filter-card w-full text-left" type="button" aria-label="Lihat karyawan yang belum melakukan DCU hari ini" disabled>
+          <button id="missing-dcu-card" class="stat-card summary-filter-card w-full text-left" type="button" aria-label="Lihat pekerja yang belum melakukan DCU hari ini" disabled>
             <span class="stat-icon amber"><i data-lucide="user-round-x"></i></span>
             <p class="stat-label">Belum DCU<span id="stat-missing-department" class="hidden"></span></p>
             <p id="stat-missing-dcu" class="stat-value">—</p>
           </button>
-          <button class="stat-card summary-filter-card w-full text-left" data-summary-filter="fit_to_work" type="button" aria-label="Lihat riwayat Fit to Work"><span class="stat-icon green"><i data-lucide="shield-check"></i></span><p class="stat-label">Fit to Work</p><p id="stat-fit" class="stat-value">—</p></button>
-          <button class="stat-card summary-filter-card w-full text-left" data-summary-filter="need_observation" type="button" aria-label="Lihat riwayat yang perlu observasi"><span class="stat-icon amber"><i data-lucide="eye"></i></span><p class="stat-label">Perlu observasi</p><p id="stat-observe" class="stat-value">—</p></button>
-          <button class="stat-card summary-filter-card w-full text-left" data-summary-filter="rest_recommended" type="button" aria-label="Lihat riwayat istirahat disarankan"><span class="stat-icon rose"><i data-lucide="heart-pulse"></i></span><p class="stat-label">Istirahat disarankan</p><p id="stat-rest" class="stat-value">—</p></button>
+          <button class="stat-card summary-filter-card w-full text-left" data-summary-filter="fit_to_work" type="button" aria-label="Lihat riwayat Fit bekerja"><span class="stat-icon green"><i data-lucide="shield-check"></i></span><p class="stat-label">Fit Bekerja</p><p id="stat-fit" class="stat-value">—</p></button>
+          <button class="stat-card summary-filter-card w-full text-left" data-summary-filter="need_observation" type="button" aria-label="Lihat riwayat yang perlu evaluasi medis"><span class="stat-icon amber"><i data-lucide="eye"></i></span><p class="stat-label">Perlu Evaluasi Medis</p><p id="stat-observe" class="stat-value">—</p></button>
+          <button class="stat-card summary-filter-card w-full text-left" data-summary-filter="rest_recommended" type="button" aria-label="Lihat riwayat yang tidak fit bekerja"><span class="stat-icon rose"><i data-lucide="heart-pulse"></i></span><p class="stat-label">Tidak Fit Bekerja</p><p id="stat-rest" class="stat-value">—</p></button>
         </div>
               
       </section>
@@ -364,27 +364,27 @@
         <div class="mb-5">
           <p class="eyebrow">PREFERENSI PERANGKAT</p>
           <h1 id="profile-heading" class="mt-1 font-display text-2xl font-extrabold tracking-tight text-slate-900">Profil pengunjung</h1>
-          <p class="mt-1 text-sm leading-5 text-slate-500">Lengkapi departemen, nama, dan nomor WhatsApp sebelum checkup. Informasi ini diingat di browser ini agar checkup berikutnya lebih cepat.</p>
+          <p class="mt-1 text-sm leading-5 text-slate-500">Lengkapi fungsi, nama, dan nomor WhatsApp sebelum checkup. Informasi ini diingat di browser ini agar checkup berikutnya lebih cepat.</p>
         </div>
         <form id="guest-profile-form" class="panel-card">
-          <label class="field-label" id="profile-department-tabs-label" for="profile-department">Departemen</label>
+          <label class="field-label" id="profile-department-tabs-label" for="profile-department">Fungsi</label>
           <div id="profile-department-tabs-wrap" class="department-tabs-wrap mt-2">
             <div id="profile-department-tabs" class="department-tabs flex gap-2 overflow-x-auto pb-1 scrollbar-none" role="tablist" aria-labelledby="profile-department-tabs-label">
-              <!-- Tab departemen profil diisi dinamis oleh JavaScript -->
+              <!-- Tab fungsi profil diisi dinamis oleh JavaScript -->
             </div>
           </div>
           <select id="profile-department" class="sr-only" required aria-hidden="true" tabindex="-1">
-            <option value="">Pilih departemen</option>
+            <option value="">Pilih fungsi</option>
           </select>
 
           <div class="mt-4">
             <div class="flex items-center justify-between gap-2 mb-2">
-              <label class="field-label" id="profile-employee-list-label" for="profile-employee">Nama karyawan <span id="profile-employee-count-badge" class="font-normal text-slate-400"></span></label>
-              <button id="profile-add-employee" class="secondary-button min-h-[36px] py-1 gap-1 px-2.5 text-[11px]" type="button" aria-label="Tambah karyawan baru" title="Tambah karyawan"><i data-lucide="user-plus"></i>Tambah</button>
+              <label class="field-label" id="profile-employee-list-label" for="profile-employee">Nama pekerja <span id="profile-employee-count-badge" class="font-normal text-slate-400"></span></label>
+              <button id="profile-add-employee" class="secondary-button min-h-[36px] py-1 gap-1 px-2.5 text-[11px]" type="button" aria-label="Tambah pekerja baru" title="Tambah pekerja"><i data-lucide="user-plus"></i>Tambah</button>
             </div>
             <div id="profile-employee-search-wrap" class="employee-search-wrap mb-2">
               <i data-lucide="search" class="employee-search-icon"></i>
-              <input id="profile-employee-search" type="search" class="employee-search-input" placeholder="Cari nama karyawan..." autocomplete="off">
+              <input id="profile-employee-search" type="search" class="employee-search-input" placeholder="Cari nama pekerja..." autocomplete="off">
               <button id="profile-employee-search-clear" type="button" class="employee-search-clear hidden" aria-label="Hapus pencarian"><i data-lucide="x"></i></button>
             </div>
             <div id="profile-employee-list-scroll-wrap" class="employee-list-scroll-wrap overflow-y-auto rounded-xl border border-slate-200 bg-slate-50/50 p-1.5" style="--visible-limit: 4;">
@@ -392,9 +392,9 @@
                 <!-- Kartu nama pekerja profil diisi dinamis oleh JavaScript -->
               </div>
             </div>
-            <p id="profile-employee-scroll-hint" class="mt-1.5 flex items-center gap-1 text-[11px] text-slate-400 hidden"><i data-lucide="chevrons-down" class="h-3.5 w-3.5"></i> Scroll ke bawah untuk memilih nama karyawan lainnya</p>
+            <p id="profile-employee-scroll-hint" class="mt-1.5 flex items-center gap-1 text-[11px] text-slate-400 hidden"><i data-lucide="chevrons-down" class="h-3.5 w-3.5"></i> Scroll ke bawah untuk memilih nama pekerja lainnya</p>
             <select id="profile-employee" class="sr-only" required aria-hidden="true" tabindex="-1">
-              <option value="">Pilih departemen terlebih dahulu</option>
+              <option value="">Pilih fungsi terlebih dahulu</option>
             </select>
           </div>
           <label class="field-label mt-4 block" for="profile-whatsapp">Nomor WhatsApp</label>
@@ -426,7 +426,7 @@
           </div>
           <div class="panel-card">
             <label class="flex items-center justify-between gap-3">
-              <span class="field-label">Tampilkan menu Checkup untuk akun yang terhubung ke karyawan</span>
+              <span class="field-label">Tampilkan menu Checkup untuk akun yang terhubung ke pekerja</span>
               <input id="menu-checkup-visible" class="toggle-input" type="checkbox">
             </label>
           </div>
@@ -459,24 +459,24 @@
         </form>
         <section id="subdepartment-management" class="mb-5 hidden space-y-4">
           <div>
-            <h2 class="font-display text-lg font-bold text-slate-900">Subdepartemen &amp; pengawas</h2>
-            <p class="mt-1 text-sm leading-5 text-slate-500">Pengawas hanya menerima notifikasi karyawan dari subdepartemen yang ditetapkan.</p>
+            <h2 class="font-display text-lg font-bold text-slate-900">Subfungsi &amp; pengawas</h2>
+            <p class="mt-1 text-sm leading-5 text-slate-500">Pengawas hanya menerima notifikasi pekerja dari subfungsi yang ditetapkan.</p>
           </div>
           <form id="subdepartment-form" class="panel-card space-y-3">
-            <h3 class="font-semibold text-slate-800">Tambah subdepartemen</h3>
-            <label class="field-label" for="subdepartment-department">Departemen</label>
+            <h3 class="font-semibold text-slate-800">Tambah subfungsi</h3>
+            <label class="field-label" for="subdepartment-department">Fungsi</label>
             <select id="subdepartment-department" class="field-input" required>
-              <option value="">Pilih departemen</option>
+              <option value="">Pilih fungsi</option>
             </select>
-            <label class="field-label" for="subdepartment-name">Nama subdepartemen</label>
+            <label class="field-label" for="subdepartment-name">Nama subfungsi</label>
             <input id="subdepartment-name" class="field-input" type="text" maxlength="120" required>
-            <button id="save-subdepartment" class="primary-button w-full" type="submit"><i data-lucide="plus"></i> Tambah subdepartemen</button>
+            <button id="save-subdepartment" class="primary-button w-full" type="submit"><i data-lucide="plus"></i> Tambah subfungsi</button>
           </form>
           <form id="supervisor-form" class="panel-card space-y-3">
             <h3 class="font-semibold text-slate-800">Tambah pengawas</h3>
-            <label class="field-label" for="supervisor-subdepartment">Subdepartemen</label>
+            <label class="field-label" for="supervisor-subdepartment">Subfungsi</label>
             <select id="supervisor-subdepartment" class="field-input" required>
-              <option value="">Pilih subdepartemen</option>
+              <option value="">Pilih subfungsi</option>
             </select>
             <label class="field-label" for="supervisor-name">Nama pengawas</label>
             <input id="supervisor-name" class="field-input" type="text" maxlength="120" required>
@@ -487,18 +487,18 @@
           <div class="panel-card">
             <h3 class="font-semibold text-slate-800">Pengawas terdaftar</h3>
             <div id="subdepartment-supervisor-list" class="mt-3 space-y-3">
-              <p class="text-sm text-slate-500">Memuat data subdepartemen…</p>
+              <p class="text-sm text-slate-500">Memuat data subfungsi…</p>
             </div>
           </div>
           <form id="employee-subdepartment-form" class="panel-card space-y-3">
-            <h3 class="font-semibold text-slate-800">Tetapkan subdepartemen karyawan</h3>
-            <label class="field-label" for="subdepartment-employee">Karyawan aktif</label>
+            <h3 class="font-semibold text-slate-800">Tetapkan subfungsi pekerja</h3>
+            <label class="field-label" for="subdepartment-employee">Pekerja aktif</label>
             <select id="subdepartment-employee" class="field-input" required>
-              <option value="">Pilih karyawan</option>
+              <option value="">Pilih pekerja</option>
             </select>
-            <label class="field-label" for="employee-subdepartment">Subdepartemen</label>
+            <label class="field-label" for="employee-subdepartment">Subfungsi</label>
             <select id="employee-subdepartment" class="field-input">
-              <option value="">Pilih karyawan terlebih dahulu</option>
+              <option value="">Pilih pekerja terlebih dahulu</option>
             </select>
             <button id="save-employee-subdepartment" class="primary-button w-full" type="submit"><i data-lucide="save"></i> Simpan penetapan</button>
           </form>
@@ -547,12 +547,12 @@
     <dialog id="employee-modal" class="modal">
       <form id="employee-form" class="modal-card">
         <div class="mb-5 flex items-start justify-between">
-          <div><p id="employee-modal-eyebrow" class="eyebrow">MASTER DATA</p><h2 id="employee-modal-title" class="mt-1 font-display text-xl font-extrabold text-slate-900">Tambah karyawan</h2></div>
+          <div><p id="employee-modal-eyebrow" class="eyebrow">MASTER DATA</p><h2 id="employee-modal-title" class="mt-1 font-display text-xl font-extrabold text-slate-900">Tambah pekerja</h2></div>
           <button id="close-employee-modal" class="icon-button" type="button" aria-label="Tutup"><i data-lucide="x"></i></button>
         </div>
         <label class="field-label" for="new-employee-name">Nama lengkap</label>
         <input id="new-employee-name" class="field-input mt-2" type="text" maxlength="120" required>
-        <label class="field-label mt-4" for="new-employee-status">Status karyawan <span class="font-normal text-slate-500">(opsional)</span></label>
+        <label class="field-label mt-4" for="new-employee-status">Status pekerja <span class="font-normal text-slate-500">(opsional)</span></label>
         <select id="new-employee-status" class="field-input mt-2">
           <option value="">Pilih status</option>
           <option value="PERWIRA">PERWIRA</option>
@@ -568,17 +568,17 @@
           <option value="Shift">Shift</option>
           <option value="Non-Shift">Non-Shift</option>
         </select>
-        <label id="new-employee-subdepartment-wrap" class="field-label mt-4 block hidden" for="new-employee-subdepartment">Subdepartemen <span class="font-normal text-slate-500">(opsional)</span></label>
+        <label id="new-employee-subdepartment-wrap" class="field-label mt-4 block hidden" for="new-employee-subdepartment">Subfungsi <span class="font-normal text-slate-500">(opsional)</span></label>
         <select id="new-employee-subdepartment" class="field-input mt-2 hidden">
-          <option value="">Tanpa subdepartemen</option>
+          <option value="">Tanpa subfungsi</option>
         </select>
         <label id="new-employee-active-wrap" class="mt-4 flex items-center gap-3 text-sm font-semibold text-slate-700" for="new-employee-active">
           <input id="new-employee-active" class="toggle-input" type="checkbox" checked>
-          Karyawan aktif
+          Pekerja aktif
         </label>
         <p id="new-employee-department" class="mt-3 text-xs text-slate-500"></p>
-        <p id="guest-employee-note" class="mt-2 hidden text-xs leading-5 text-amber-800">Nama dan informasi ini akan masuk ke daftar departemen dan tidak memerlukan akun login.</p>
-        <button id="save-employee" class="primary-button mt-5 w-full" type="submit">Simpan karyawan <i data-lucide="check"></i></button>
+        <p id="guest-employee-note" class="mt-2 hidden text-xs leading-5 text-amber-800">Nama dan informasi ini akan masuk ke daftar fungsi dan tidak memerlukan akun login.</p>
+        <button id="save-employee" class="primary-button mt-5 w-full" type="submit">Simpan pekerja <i data-lucide="check"></i></button>
       </form>
     </dialog>
 
@@ -650,12 +650,12 @@
         </div>
 
         <label id="missing-dcu-department-filter-wrap" class="mb-3 block hidden" for="missing-dcu-department-filter">
-          <span class="field-label">Departemen</span>
+          <span class="field-label">Fungsi</span>
           <select id="missing-dcu-department-filter" class="field-input mt-2">
-            <option value="">Semua departemen</option>
+            <option value="">Semua fungsi</option>
           </select>
         </label>
-        <p class="mb-3 text-sm text-slate-600"><b id="missing-dcu-count" class="text-slate-900">0</b> karyawan belum melakukan DCU.</p>
+        <p class="mb-3 text-sm text-slate-600"><b id="missing-dcu-count" class="text-slate-900">0</b> pekerja belum melakukan DCU.</p>
         <div id="missing-dcu-list" class="mb-4 max-h-72 space-y-2 overflow-y-auto"></div>
         <div class="space-y-2">
           <button id="export-missing-dcu-csv" class="primary-button w-full justify-center" type="button" disabled><i data-lucide="file-down"></i> Ekspor daftar CSV</button>
