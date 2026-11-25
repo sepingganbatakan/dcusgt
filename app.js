@@ -36,6 +36,7 @@ const checkupForm = document.querySelector("#checkup-form");
 const checkupProgress = document.querySelector("#checkup-progress");
 const resultCard = document.querySelector("#result-card");
 const employeeModal = document.querySelector("#employee-modal");
+const employeeEditModal = document.querySelector("#employee-edit-modal");
 const checkupConfirmModal = document.querySelector("#checkup-confirm-modal");
 const exportConfirmModal = document.querySelector("#export-confirm-modal");
 const missingDcuModal = document.querySelector("#missing-dcu-modal");
@@ -64,7 +65,7 @@ let currentUser;
 let currentProfile;
 let adminSettings = [];
 let adminSettingsLoaded = false;
-let hrSettingsAccessConfig = { enabled: false, allowed_settings: [] };
+let hrSettingsAccessConfig = { enabled: false, allowed_settings: [], allowed_features: [] };
 let hrSettingsAccessConfigLoaded = false;
 let hrSettings = [];
 let hrSettingsLoaded = false;
@@ -82,6 +83,9 @@ let departments = [];
 let subdepartments = [];
 let subdepartmentSupervisors = [];
 let employees = [];
+let employeeManagementEmployees = [];
+let employeeManagementSelectedId = "";
+let employeeManagementDepartmentId = "all";
 let checkups = [];
 let todayCheckupCount = null;
 let todayReadinessCounts = null;
@@ -108,6 +112,12 @@ let checkupPageCount = 3;
 let employeeDisplayLimit = (typeof DEFAULT_EMPLOYEE_DISPLAY_LIMIT === "number" && DEFAULT_EMPLOYEE_DISPLAY_LIMIT > 0)
   ? DEFAULT_EMPLOYEE_DISPLAY_LIMIT
   : 4;
+const HR_FEATURES = [
+  { key: "employee_data", label: "Mengubah data karyawan" },
+  { key: "subdepartments", label: "Menambah atau menghapus subfungsi" },
+  { key: "supervisors", label: "Menambah atau menghapus pengawas subfungsi" },
+  { key: "employee_subdepartment", label: "Menetapkan subfungsi pekerja" }
+];
 
 if (!["tabs", "dropdown"].includes(DEPARTMENT_SELECTION_MODE)) {
   throw new Error('DEPARTMENT_SELECTION_MODE must be "tabs" or "dropdown".');
@@ -755,27 +765,42 @@ async function refreshRuntimeAfterSettingsSave(values) {
 function renderHrSettingsAccessConfig() {
   document.querySelector("#hr-settings-enabled").checked = hrSettingsAccessConfig.enabled;
   hrSettingsPermissions.replaceChildren();
+  const featurePermissions = document.querySelector("#hr-settings-features");
+  featurePermissions.replaceChildren();
 
   if (adminSettings.length === 0) {
     const emptyMessage = document.createElement("p");
     emptyMessage.className = "text-sm text-slate-500";
     emptyMessage.textContent = "Tidak ada pengaturan tersedia untuk dipilih.";
     hrSettingsPermissions.append(emptyMessage);
-    return;
+  } else {
+    for (const setting of adminSettings) {
+      const row = document.createElement("label");
+      row.className = "flex items-start gap-3 text-sm text-slate-700";
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.className = "toggle-input mt-0.5";
+      input.dataset.hrSettingKey = setting.key;
+      input.checked = hrSettingsAccessConfig.allowed_settings.includes(setting.key);
+      const label = document.createElement("span");
+      label.textContent = setting.label;
+      row.append(input, label);
+      hrSettingsPermissions.append(row);
+    }
   }
 
-  for (const setting of adminSettings) {
+  for (const feature of HR_FEATURES) {
     const row = document.createElement("label");
     row.className = "flex items-start gap-3 text-sm text-slate-700";
     const input = document.createElement("input");
     input.type = "checkbox";
     input.className = "toggle-input mt-0.5";
-    input.dataset.hrSettingKey = setting.key;
-    input.checked = hrSettingsAccessConfig.allowed_settings.includes(setting.key);
+    input.dataset.hrFeatureKey = feature.key;
+    input.checked = hrSettingsAccessConfig.allowed_features.includes(feature.key);
     const label = document.createElement("span");
-    label.textContent = setting.label;
+    label.textContent = feature.label;
     row.append(input, label);
-    hrSettingsPermissions.append(row);
+    featurePermissions.append(row);
   }
 }
 
@@ -795,6 +820,8 @@ async function loadHrSettingsAccessConfig(forceReload = false) {
     || typeof data.enabled !== "boolean"
     || !Array.isArray(data.allowed_settings)
     || data.allowed_settings.some((key) => typeof key !== "string")
+    || !Array.isArray(data.allowed_features)
+    || data.allowed_features.some((key) => typeof key !== "string")
   ) {
     hrSettingsAccessConfigLoaded = false;
     throw new Error("Supabase mengembalikan konfigurasi akses pengaturan HR dengan format yang tidak valid.");
@@ -802,11 +829,12 @@ async function loadHrSettingsAccessConfig(forceReload = false) {
 
   hrSettingsAccessConfig = {
     enabled: data.enabled,
-    allowed_settings: [...new Set(data.allowed_settings)]
+    allowed_settings: [...new Set(data.allowed_settings)],
+    allowed_features: [...new Set(data.allowed_features)]
   };
   hrSettingsAccessConfigLoaded = true;
   if (currentProfile?.role === "admin" && adminSettingsLoaded) renderHrSettingsAccessConfig();
-  applyRoleMenuVisibility();
+  syncHrFeatureAccess();
 }
 
 async function loadHrSettings(forceReload = false) {
@@ -819,8 +847,13 @@ async function loadHrSettings(forceReload = false) {
   if (!hrSettingsAccessConfig.enabled) {
     throw new Error("Akses menu Pengaturan untuk HR sedang dinonaktifkan.");
   }
-  if (hrSettingsLoaded && !forceReload) return;
+  const hrSettingsForm = document.querySelector("#hr-settings-form");
+  if (hrSettingsLoaded && !forceReload) {
+    hrSettingsForm.classList.toggle("hidden", hrSettings.length === 0);
+    return;
+  }
 
+  hrSettingsForm.classList.remove("hidden");
   hrSettingsFields.replaceChildren();
   const loadingMessage = document.createElement("p");
   loadingMessage.className = "panel-card text-sm text-slate-500";
@@ -842,7 +875,11 @@ async function loadHrSettings(forceReload = false) {
 
   hrSettings = data;
   hrSettingsLoaded = true;
-  document.querySelector("#save-hr-settings").classList.toggle("hidden", data.length === 0);
+  if (data.length === 0) {
+    hrSettingsForm.classList.add("hidden");
+    return;
+  }
+  document.querySelector("#save-hr-settings").classList.remove("hidden");
   renderSettingsFields(hrSettingsFields, hrSettings);
 }
 
@@ -902,7 +939,9 @@ async function handleHrSettingsAccessSave(event) {
   const values = {
     enabled: document.querySelector("#hr-settings-enabled").checked,
     allowed_settings: [...hrSettingsPermissions.querySelectorAll("[data-hr-setting-key]:checked")]
-      .map((input) => input.dataset.hrSettingKey)
+      .map((input) => input.dataset.hrSettingKey),
+    allowed_features: [...document.querySelectorAll("#hr-settings-features [data-hr-feature-key]:checked")]
+      .map((input) => input.dataset.hrFeatureKey)
   };
   setBusy(button, true, "Menyimpan…");
   try {
@@ -911,9 +950,11 @@ async function handleHrSettingsAccessSave(event) {
 
     hrSettingsAccessConfig = values;
     hrSettingsAccessConfigLoaded = true;
-    applyRoleMenuVisibility();
+    syncHrFeatureAccess();
     const activeTab = document.querySelector(".nav-item.active")?.dataset.tabTarget;
-    if (activeTab === "settings" && !values.enabled) setTab("summary", false);
+    if (activeTab === "settings" && !values.enabled && values.allowed_features.length === 0) {
+      setTab("summary", false);
+    }
     showToast("Akses pengaturan HR berhasil disimpan.");
   } catch (error) {
     console.error("HR settings access save failed:", error);
@@ -1175,6 +1216,46 @@ function isAdmin() {
   return ["admin", "hr"].includes(currentProfile?.role);
 }
 
+function canManageHrFeature(feature) {
+  return currentProfile?.role === "admin"
+    || (currentProfile?.role === "hr" && hrSettingsAccessConfig.allowed_features.includes(feature));
+}
+
+function syncHrFeatureAccess() {
+  const canManageSubdepartments = canManageHrFeature("subdepartments");
+  const canManageSupervisors = canManageHrFeature("supervisors");
+  const canAssignEmployeeSubdepartments = canManageHrFeature("employee_subdepartment");
+  const hasSubdepartmentAccess = canManageSubdepartments
+    || canManageSupervisors
+    || canAssignEmployeeSubdepartments;
+
+  document.querySelector("#subdepartment-management").classList.toggle("hidden", !hasSubdepartmentAccess);
+  document.querySelector("#subdepartment-form").classList.toggle("hidden", !canManageSubdepartments);
+  document.querySelector("#supervisor-form").classList.toggle("hidden", !canManageSupervisors);
+  document.querySelector("#subdepartment-list-panel").classList.toggle(
+    "hidden",
+    !canManageSubdepartments && !canManageSupervisors
+  );
+  document.querySelector("#employee-subdepartment-form").classList.toggle(
+    "hidden",
+    !canAssignEmployeeSubdepartments
+  );
+  document.querySelector("#employee-edit-subdepartment-wrap").classList.toggle(
+    "hidden",
+    !canAssignEmployeeSubdepartments
+  );
+  document.querySelector("#new-employee-subdepartment-wrap").classList.toggle(
+    "hidden",
+    guestMode || !canAssignEmployeeSubdepartments
+  );
+  document.querySelector("#new-employee-subdepartment").classList.toggle(
+    "hidden",
+    guestMode || !canAssignEmployeeSubdepartments
+  );
+  syncEmployeeManagementAccess();
+  applyRoleMenuVisibility();
+}
+
 function isProfileMenuVisible() {
   if (currentProfile?.role === "admin") return adminHrMenuVisibility.profile_admin;
   if (currentProfile?.role === "hr") return adminHrMenuVisibility.profile_hr;
@@ -1190,10 +1271,18 @@ function canAddGuestEmployee() {
   return guestMode && guestEmployeeCreationEnabled;
 }
 
+function canEditEmployeeData() {
+  return canManageHrFeature("employee_data");
+}
+
 function syncEmployeeCreationButtons() {
   const canAdd = canAddAuthenticatedEmployee() || canAddGuestEmployee();
   document.querySelector("#open-employee-modal").classList.toggle("hidden", !canAdd);
   document.querySelector("#profile-add-employee").classList.toggle("hidden", !canAdd);
+  document.querySelector("#employee-management-add").classList.toggle(
+    "hidden",
+    !canAddAuthenticatedEmployee()
+  );
 }
 
 async function loadHrEmployeeCreationSetting() {
@@ -1212,6 +1301,12 @@ async function loadHrEmployeeCreationSetting() {
   hrEmployeeCreationEnabled = data;
   syncEmployeeCreationButtons();
   return data;
+}
+
+function syncEmployeeManagementAccess() {
+  const allowed = canEditEmployeeData();
+  document.querySelector("#employee-management").classList.toggle("hidden", !allowed);
+  applyRoleMenuVisibility();
 }
 
 async function loadGuestEmployeeCreationSetting() {
@@ -1264,7 +1359,9 @@ function applyRoleMenuVisibility() {
   const settingsButton = document.querySelector('[data-tab-target="settings"]');
   const bottomNav = document.querySelector(".bottom-nav");
   const canAccessSettings = currentProfile?.role === "admin"
-    || (currentProfile?.role === "hr" && hrSettingsAccessConfig.enabled);
+    || (currentProfile?.role === "hr" && (
+      hrSettingsAccessConfig.enabled || hrSettingsAccessConfig.allowed_features.length > 0
+    ));
   profileButton.classList.toggle("hidden", !guestMode && !isProfileMenuVisible());
   checkupButton.classList.toggle("hidden", !guestMode && isAdmin() && !isLinkedAdminHrCheckupAccount());
   settingsButton.classList.toggle("hidden", !canAccessSettings);
@@ -1977,14 +2074,29 @@ function syncGuestProfileForm() {
   }
 }
 
-function openEmployeeModal(departmentId, canAddAsGuest) {
+function openEmployeeModal(departmentId, canAddAsGuest, options = {}) {
   document.querySelector("#employee-form").reset();
+  employeeModal.dataset.departmentId = departmentId || "";
+  employeeModal.dataset.managementAdd = options.managementAdd ? "true" : "false";
   document.querySelector("#employee-modal-eyebrow").textContent = canAddAsGuest ? "TAMBAH NAMA" : "MASTER DATA";
   document.querySelector("#employee-modal-title").textContent = canAddAsGuest ? "Tambahkan nama Anda" : "Tambah karyawan";
   document.querySelector("#guest-employee-note").classList.toggle("hidden", !canAddAsGuest);
   document.querySelector("#new-employee-active-wrap").classList.toggle("hidden", canAddAsGuest);
-  document.querySelector("#new-employee-subdepartment-wrap").classList.toggle("hidden", canAddAsGuest);
-  document.querySelector("#new-employee-subdepartment").classList.toggle("hidden", canAddAsGuest);
+  const departmentSelectWrap = document.querySelector("#new-employee-department-select-wrap");
+  const departmentSelectForNewEmployee = document.querySelector("#new-employee-department-select");
+  const allowDepartmentSelection = Boolean(options.allowDepartmentSelection) && !canAddAsGuest;
+  departmentSelectWrap.classList.toggle("hidden", !allowDepartmentSelection);
+  departmentSelectForNewEmployee.classList.toggle("hidden", !allowDepartmentSelection);
+  departmentSelectForNewEmployee.required = allowDepartmentSelection;
+  departmentSelectForNewEmployee.replaceChildren(new Option("Pilih fungsi", ""));
+  for (const department of departments) {
+    departmentSelectForNewEmployee.add(new Option(department.name, department.id));
+  }
+  departmentSelectForNewEmployee.value = departmentId || "";
+  document.querySelector("#new-employee-department").classList.toggle("hidden", allowDepartmentSelection);
+  const canAssignSubdepartment = canManageHrFeature("employee_subdepartment") && !canAddAsGuest;
+  document.querySelector("#new-employee-subdepartment-wrap").classList.toggle("hidden", !canAssignSubdepartment);
+  document.querySelector("#new-employee-subdepartment").classList.toggle("hidden", !canAssignSubdepartment);
   populateSubdepartmentSelect(
     document.querySelector("#new-employee-subdepartment"),
     departmentId,
@@ -1994,6 +2106,36 @@ function openEmployeeModal(departmentId, canAddAsGuest) {
   const departmentName = departments.find((department) => department.id === departmentId)?.name ?? "";
   document.querySelector("#new-employee-department").textContent = `Fungsi: ${departmentName}`;
   employeeModal.showModal();
+}
+
+async function openEmployeeModalFromManagement() {
+  if (currentProfile?.role === "hr") {
+    try {
+      await loadHrEmployeeCreationSetting();
+    } catch (error) {
+      console.error("Could not verify HR employee-creation permission:", error);
+      showToast(`Gagal memverifikasi izin penambahan karyawan: ${error.message}`, true);
+      return;
+    }
+  }
+  if (!canAddAuthenticatedEmployee()) {
+    showToast("Anda tidak diizinkan menambah karyawan baru.", true);
+    return;
+  }
+
+  const selectedDepartmentId = DEPARTMENT_SELECTION_MODE === "dropdown"
+    ? document.querySelector("#employee-management-department").value
+    : employeeManagementDepartmentId === "all"
+      ? ""
+      : employeeManagementDepartmentId;
+  if (!selectedDepartmentId && departments.length === 0) {
+    showToast("Tambahkan fungsi terlebih dahulu sebelum menambah karyawan.", true);
+    return;
+  }
+  openEmployeeModal(selectedDepartmentId, false, {
+    managementAdd: true,
+    allowDepartmentSelection: !selectedDepartmentId
+  });
 }
 
 function setBusy(button, busy, label) {
@@ -2615,8 +2757,10 @@ function applySelectionModes() {
   for (const [select, isDropdown] of [
     [departmentSelect, departmentDropdown],
     [document.querySelector("#profile-department"), departmentDropdown],
+    [document.querySelector("#employee-management-department"), departmentDropdown],
     [employeeSelect, employeeDropdown],
-    [document.querySelector("#profile-employee"), employeeDropdown]
+    [document.querySelector("#profile-employee"), employeeDropdown],
+    [document.querySelector("#employee-management-employee"), employeeDropdown]
   ]) {
     select.classList.toggle("sr-only", !isDropdown);
     select.classList.toggle("field-input", isDropdown);
@@ -2633,14 +2777,19 @@ function applySelectionModes() {
 
   document.querySelector("#department-tabs-wrap").classList.toggle("hidden", departmentDropdown);
   document.querySelector("#profile-department-tabs-wrap").classList.toggle("hidden", departmentDropdown);
+  document.querySelector("#employee-management-department-tabs-wrap").classList.toggle("hidden", departmentDropdown);
   document.querySelector("#employee-search-wrap").classList.toggle("hidden", employeeDropdown);
   document.querySelector("#employee-list-scroll-wrap").classList.toggle("hidden", employeeDropdown);
   document.querySelector("#employee-scroll-hint").classList.toggle("hidden", employeeDropdown);
   document.querySelector("#profile-employee-search-wrap").classList.toggle("hidden", employeeDropdown);
   document.querySelector("#profile-employee-list-scroll-wrap").classList.toggle("hidden", employeeDropdown);
   document.querySelector("#profile-employee-scroll-hint").classList.toggle("hidden", employeeDropdown);
+  document.querySelector("#employee-management-search-wrap").classList.toggle("hidden", employeeDropdown);
+  document.querySelector("#employee-management-list-scroll-wrap").classList.toggle("hidden", employeeDropdown);
+  document.querySelector("#employee-management-scroll-hint").classList.toggle("hidden", employeeDropdown);
   document.querySelector("#employee-count-badge").classList.toggle("hidden", employeeDropdown);
   document.querySelector("#profile-employee-count-badge").classList.toggle("hidden", employeeDropdown);
+  document.querySelector("#employee-management-count-badge").classList.toggle("hidden", employeeDropdown);
 }
 
 async function loadDepartments() {
@@ -2689,6 +2838,314 @@ function populateSubdepartmentSelect(select, departmentId, selectedId = "", empt
   }
   if (subdepartmentsForDepartment(departmentId).some((subdepartment) => subdepartment.id === selectedId)) {
     select.value = selectedId;
+  }
+}
+
+async function loadEmployeeManagementList() {
+  if (!canEditEmployeeData()) {
+    throw new Error("Anda tidak diizinkan mengubah data karyawan.");
+  }
+
+  const pageSize = 1000;
+  const allEmployees = [];
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await client
+      .from("employees")
+      .select("id, department_id, sub_department_id, full_name, employment_status, job_title, work_pattern, is_active")
+      .order("full_name")
+      .order("id")
+      .range(offset, offset + pageSize - 1);
+    if (error) throw error;
+    allEmployees.push(...(data ?? []));
+    if (!data || data.length < pageSize) break;
+  }
+
+  employeeManagementEmployees = allEmployees;
+  renderEmployeeManagementPicker();
+}
+
+function renderEmployeeManagementDepartmentTabs() {
+  const container = document.querySelector("#employee-management-department-tabs");
+  const departmentSelectForManagement = document.querySelector("#employee-management-department");
+  container.replaceChildren();
+
+  const addTab = (id, label, count) => {
+    const tab = document.createElement("button");
+    const isActive = employeeManagementDepartmentId === id;
+    tab.type = "button";
+    tab.className = `department-tab ${isActive ? "is-active" : ""}`;
+    tab.setAttribute("role", "tab");
+    tab.setAttribute("aria-selected", isActive ? "true" : "false");
+    tab.dataset.departmentId = id;
+    tab.innerHTML = `<span>${escapeHtml(label)}</span><span class="department-tab-count">${count}</span>`;
+    tab.addEventListener("click", () => {
+      employeeManagementDepartmentId = id;
+      departmentSelectForManagement.value = id === "all" ? "" : id;
+      clearEmployeeManagementSelection();
+      renderEmployeeManagementPicker();
+    });
+    container.append(tab);
+  };
+
+  addTab("all", "Semua", employeeManagementEmployees.length);
+  for (const department of departments) {
+    const count = employeeManagementEmployees.filter((employee) =>
+      employee.department_id === department.id
+    ).length;
+    addTab(department.id, department.name, count);
+  }
+}
+
+function clearEmployeeManagementSelection() {
+  employeeManagementSelectedId = "";
+  document.querySelector("#employee-management-employee").value = "";
+  document.querySelector("#edit-employee-button").disabled = true;
+}
+
+function renderEmployeeManagementPicker() {
+  const departmentSelectForManagement = document.querySelector("#employee-management-department");
+  const employeeSelectForManagement = document.querySelector("#employee-management-employee");
+  const employeeList = document.querySelector("#employee-management-list");
+  const searchInput = document.querySelector("#employee-management-search");
+  const searchQuery = searchInput.value.trim().toLowerCase();
+  const searchClear = document.querySelector("#employee-management-search-clear");
+  const countBadge = document.querySelector("#employee-management-count-badge");
+  const scrollHint = document.querySelector("#employee-management-scroll-hint");
+  const scrollWrap = document.querySelector("#employee-management-list-scroll-wrap");
+  const departmentId = DEPARTMENT_SELECTION_MODE === "dropdown"
+    ? departmentSelectForManagement.value
+    : employeeManagementDepartmentId;
+  const showAllEmployees = !departmentId && (
+    EMPLOYEE_SELECTION_MODE === "list"
+    || (DEPARTMENT_SELECTION_MODE === "tabs" && employeeManagementDepartmentId === "all")
+  );
+  const departmentEmployees = employeeManagementEmployees.filter((employee) =>
+    employee.department_id === departmentId || showAllEmployees
+  );
+  const displayedEmployees = departmentEmployees.filter((employee) => {
+    if (!searchQuery) return true;
+    const departmentName = departments.find((department) => department.id === employee.department_id)?.name ?? "";
+    return `${employee.full_name} ${departmentName} ${employee.job_title ?? ""} ${employee.employment_status ?? ""}`
+      .toLowerCase()
+      .includes(searchQuery);
+  });
+
+  departmentSelectForManagement.replaceChildren(new Option("Pilih fungsi", ""));
+  for (const department of departments) {
+    departmentSelectForManagement.add(new Option(department.name, department.id));
+  }
+  if (departments.some((department) => department.id === departmentId)) {
+    departmentSelectForManagement.value = departmentId;
+  }
+  if (DEPARTMENT_SELECTION_MODE === "tabs") {
+    renderEmployeeManagementDepartmentTabs();
+    departmentSelectForManagement.value = employeeManagementDepartmentId === "all"
+      ? ""
+      : employeeManagementDepartmentId;
+  } else {
+    employeeManagementDepartmentId = departmentSelectForManagement.value || "all";
+  }
+
+  if (EMPLOYEE_SELECTION_MODE === "list") {
+    employeeSelectForManagement.replaceChildren(new Option("Pilih karyawan", ""));
+    for (const employee of displayedEmployees) {
+      employeeSelectForManagement.add(new Option(employee.full_name, employee.id));
+    }
+    if (!displayedEmployees.some((employee) => employee.id === employeeManagementSelectedId)) {
+      clearEmployeeManagementSelection();
+    } else {
+      employeeSelectForManagement.value = employeeManagementSelectedId;
+    }
+    document.querySelector("#edit-employee-button").disabled = !employeeManagementSelectedId;
+
+    scrollWrap.style.setProperty("--visible-limit", String(employeeDisplayLimit));
+    countBadge.textContent = `(${displayedEmployees.length})`;
+    scrollHint.classList.toggle("hidden", displayedEmployees.length <= employeeDisplayLimit);
+    searchClear.classList.toggle("hidden", !searchInput.value);
+    employeeList.replaceChildren();
+    if (displayedEmployees.length === 0) {
+      const emptyState = document.createElement("div");
+      emptyState.className = "p-4 text-center text-xs text-slate-400";
+      emptyState.textContent = searchQuery
+        ? `Tidak ada karyawan yang cocok dengan "${searchInput.value.trim()}"`
+        : departmentId && departmentId !== "all"
+          ? "Belum ada karyawan terdaftar di fungsi ini"
+          : "Belum ada karyawan terdaftar";
+      employeeList.append(emptyState);
+    } else {
+      for (const employee of displayedEmployees) {
+        const isSelected = employee.id === employeeManagementSelectedId;
+        const card = document.createElement("button");
+        card.type = "button";
+        card.className = `employee-card ${isSelected ? "is-selected" : ""}`;
+        card.setAttribute("role", "radio");
+        card.setAttribute("aria-checked", isSelected ? "true" : "false");
+        card.dataset.employeeId = employee.id;
+        const departmentName = departments.find((department) => department.id === employee.department_id)?.name;
+        const badges = [];
+        if ((departmentId === "all" || !departmentId || searchQuery) && departmentName) {
+          badges.push(`<span class="employee-card-badge dept">${escapeHtml(departmentName)}</span>`);
+        }
+        if (employee.work_pattern) {
+          const shift = employee.work_pattern.toLowerCase().includes("shift")
+            && !employee.work_pattern.toLowerCase().includes("non");
+          badges.push(`<span class="employee-card-badge ${shift ? "shift" : "non-shift"}">${escapeHtml(employee.work_pattern)}</span>`);
+        }
+        if (employee.job_title) badges.push(`<span>${escapeHtml(employee.job_title)}</span>`);
+        else if (employee.employment_status) badges.push(`<span>${escapeHtml(employee.employment_status)}</span>`);
+        if (!employee.is_active) badges.push('<span class="employee-card-badge">Tidak aktif</span>');
+        card.innerHTML = `
+          <div class="employee-card-info">
+            <span class="employee-card-name">${escapeHtml(employee.full_name)}</span>
+            <div class="employee-card-meta">${badges.join("")}</div>
+          </div>
+          <div class="employee-card-radio"><i data-lucide="check"></i></div>
+        `;
+        card.addEventListener("click", () => {
+          employeeManagementSelectedId = employee.id;
+          if (DEPARTMENT_SELECTION_MODE === "tabs") {
+            employeeManagementDepartmentId = employee.department_id;
+            renderEmployeeManagementPicker();
+          } else {
+            departmentSelectForManagement.value = employee.department_id;
+            employeeManagementDepartmentId = employee.department_id;
+            renderEmployeeManagementPicker();
+          }
+          employeeSelectForManagement.value = employee.id;
+          document.querySelector("#edit-employee-button").disabled = false;
+        });
+        employeeList.append(card);
+      }
+    }
+    window.lucide?.createIcons();
+  } else {
+    employeeSelectForManagement.replaceChildren(new Option(
+      !departmentId && !showAllEmployees
+        ? "Pilih fungsi terlebih dahulu"
+        : displayedEmployees.length
+          ? "Pilih karyawan"
+          : "Belum ada karyawan terdaftar",
+      ""
+    ));
+    for (const employee of displayedEmployees) {
+      const departmentName = departments.find((department) => department.id === employee.department_id)?.name;
+      const departmentLabel = showAllEmployees && departmentName ? ` — ${departmentName}` : "";
+      const inactiveLabel = employee.is_active ? "" : " [Tidak aktif]";
+      employeeSelectForManagement.add(new Option(
+        `${employee.full_name}${departmentLabel}${inactiveLabel}`,
+        employee.id
+      ));
+    }
+    employeeSelectForManagement.value = displayedEmployees.some(
+      (employee) => employee.id === employeeManagementSelectedId
+    ) ? employeeManagementSelectedId : "";
+    employeeManagementSelectedId = employeeSelectForManagement.value;
+    document.querySelector("#edit-employee-button").disabled = !employeeManagementSelectedId;
+  }
+}
+
+function openEmployeeEditModal(employeeId) {
+  if (!canEditEmployeeData()) {
+    showToast("Anda tidak diizinkan mengubah data karyawan.", true);
+    return;
+  }
+  const employee = employeeManagementEmployees.find((item) => item.id === employeeId);
+  if (!employee) {
+    showToast("Data karyawan tidak ditemukan. Muat ulang daftar karyawan.", true);
+    return;
+  }
+
+  const departmentSelectForEdit = document.querySelector("#employee-edit-department");
+  const subdepartmentSelectForEdit = document.querySelector("#employee-edit-subdepartment");
+  document.querySelector("#employee-edit-form").reset();
+  employeeEditModal.dataset.employeeId = employee.id;
+  employeeEditModal.dataset.originalDepartmentId = employee.department_id;
+  employeeEditModal.dataset.originalSubDepartmentId = employee.sub_department_id ?? "";
+  document.querySelector("#employee-edit-name").value = employee.full_name;
+  document.querySelector("#employee-edit-status").value = employee.employment_status ?? "";
+  document.querySelector("#employee-edit-job-title").value = employee.job_title ?? "";
+  populateDepartmentSelect(departmentSelectForEdit, employee.department_id);
+  document.querySelector("#employee-edit-work-pattern").value = employee.work_pattern ?? "";
+  populateSubdepartmentSelect(
+    subdepartmentSelectForEdit,
+    employee.department_id,
+    employee.sub_department_id ?? ""
+  );
+  document.querySelector("#employee-edit-active").checked = employee.is_active;
+  employeeEditModal.showModal();
+  refreshIcons();
+}
+
+async function saveEmployeeData(event) {
+  event.preventDefault();
+  if (!canEditEmployeeData()) {
+    showToast("Anda tidak diizinkan mengubah data karyawan.", true);
+    return;
+  }
+
+  const employeeId = employeeEditModal.dataset.employeeId;
+  const departmentId = document.querySelector("#employee-edit-department").value;
+  const name = document.querySelector("#employee-edit-name").value.trim();
+  const subDepartmentId = canManageHrFeature("employee_subdepartment")
+    ? document.querySelector("#employee-edit-subdepartment").value || null
+    : employeeEditModal.dataset.originalSubDepartmentId || null;
+  if (!employeeId || !departmentId || !name) {
+    showToast("Departemen dan nama karyawan wajib diisi.", true);
+    return;
+  }
+  if (
+    subDepartmentId
+    && !subdepartmentsForDepartment(departmentId).some((item) => item.id === subDepartmentId)
+  ) {
+    showToast("Subfungsi tidak sesuai dengan departemen karyawan.", true);
+    return;
+  }
+
+  const button = document.querySelector("#save-employee-edit");
+  setBusy(button, true, "Menyimpan…");
+  try {
+    const { data, error } = await client.rpc("update_employee_data", {
+      p_employee_id: employeeId,
+      p_department_id: departmentId,
+      p_full_name: name,
+      p_employment_status: document.querySelector("#employee-edit-status").value || null,
+      p_job_title: document.querySelector("#employee-edit-job-title").value.trim() || null,
+      p_work_pattern: document.querySelector("#employee-edit-work-pattern").value || null,
+      p_sub_department_id: subDepartmentId,
+      p_is_active: document.querySelector("#employee-edit-active").checked
+    });
+    if (error) throw error;
+
+    const savedEmployee = Array.isArray(data) ? data[0] : data;
+    if (!savedEmployee?.id) {
+      throw new Error("Respons penyimpanan data karyawan tidak lengkap.");
+    }
+
+    employeeEditModal.close();
+    employeeManagementSelectedId = savedEmployee.id;
+    document.querySelector("#employee-management-search").value = "";
+    if (DEPARTMENT_SELECTION_MODE === "tabs") {
+      employeeManagementDepartmentId = savedEmployee.department_id;
+    } else {
+      document.querySelector("#employee-management-department").value = savedEmployee.department_id;
+      employeeManagementDepartmentId = savedEmployee.department_id;
+    }
+    try {
+      await Promise.all([loadEmployees(), loadEmployeeManagementList()]);
+      if (isSummaryViewer()) {
+        await loadDailyCoverage();
+        renderSummary();
+      }
+      showToast("Data karyawan berhasil diperbarui.");
+    } catch (refreshError) {
+      console.error("Employee updated but the displayed data could not be refreshed:", refreshError);
+      showToast(`Data tersimpan, tetapi tampilan gagal diperbarui: ${refreshError.message}`, true);
+    }
+  } catch (error) {
+    console.error("Employee update failed:", error);
+    showToast(`Gagal memperbarui data karyawan: ${error.message}`, true);
+  } finally {
+    setBusy(button, false);
   }
 }
 
@@ -2761,13 +3218,13 @@ function renderSubdepartmentSupervisorList() {
       ? `<ul class="mt-2 space-y-2">${supervisors.map((supervisor) => `
           <li class="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2">
             <span class="min-w-0 text-sm"><span class="block truncate font-semibold text-slate-800">${escapeHtml(supervisor.full_name)}</span><span class="text-xs text-slate-500">${escapeHtml(supervisor.whatsapp_number)}</span></span>
-            <button class="secondary-button min-h-[32px] shrink-0 px-2 py-1 text-xs" type="button" data-subdepartment-action="remove-supervisor" data-id="${escapeHtml(supervisor.id)}" aria-label="Hapus pengawas ${escapeHtml(supervisor.full_name)}">Hapus</button>
+            ${canManageHrFeature("supervisors") ? `<button class="secondary-button min-h-[32px] shrink-0 px-2 py-1 text-xs" type="button" data-subdepartment-action="remove-supervisor" data-id="${escapeHtml(supervisor.id)}" aria-label="Hapus pengawas ${escapeHtml(supervisor.full_name)}">Hapus</button>` : ""}
           </li>`).join("")}</ul>`
       : '<p class="mt-2 text-xs text-slate-500">Belum ada kontak pengawas.</p>';
     return `<article class="rounded-xl border border-slate-200 p-3">
       <div class="flex items-start justify-between gap-2">
         <div class="min-w-0"><p class="text-xs text-slate-500">${escapeHtml(departmentName)}</p><h4 class="font-semibold text-slate-800">${escapeHtml(subdepartment.name)}</h4></div>
-        <button class="secondary-button min-h-[32px] shrink-0 px-2 py-1 text-xs" type="button" data-subdepartment-action="remove-subdepartment" data-id="${escapeHtml(subdepartment.id)}">Hapus</button>
+        ${canManageHrFeature("subdepartments") ? `<button class="secondary-button min-h-[32px] shrink-0 px-2 py-1 text-xs" type="button" data-subdepartment-action="remove-subdepartment" data-id="${escapeHtml(subdepartment.id)}">Hapus</button>` : ""}
       </div>
       ${contactsHtml}
     </article>`;
@@ -2789,7 +3246,10 @@ async function loadSubdepartments() {
 
 async function saveSubdepartment(event) {
   event.preventDefault();
-  if (!isAdmin()) return;
+  if (!canManageHrFeature("subdepartments")) {
+    showToast("Anda tidak diizinkan mengelola subfungsi.", true);
+    return;
+  }
   const departmentId = document.querySelector("#subdepartment-department").value;
   const name = document.querySelector("#subdepartment-name").value.trim();
   const button = document.querySelector("#save-subdepartment");
@@ -2815,7 +3275,10 @@ async function saveSubdepartment(event) {
 
 async function saveSupervisor(event) {
   event.preventDefault();
-  if (!isAdmin()) return;
+  if (!canManageHrFeature("supervisors")) {
+    showToast("Anda tidak diizinkan mengelola pengawas subfungsi.", true);
+    return;
+  }
   const subDepartmentId = document.querySelector("#supervisor-subdepartment").value;
   const fullName = document.querySelector("#supervisor-name").value.trim();
   const whatsappNumber = normalizeSupervisorPhone(document.querySelector("#supervisor-whatsapp").value);
@@ -2846,7 +3309,10 @@ async function saveSupervisor(event) {
 
 async function saveEmployeeSubdepartment(event) {
   event.preventDefault();
-  if (!isAdmin()) return;
+  if (!canManageHrFeature("employee_subdepartment")) {
+    showToast("Anda tidak diizinkan menetapkan subfungsi pekerja.", true);
+    return;
+  }
   const employeeId = document.querySelector("#subdepartment-employee").value;
   const subDepartmentId = document.querySelector("#employee-subdepartment").value || null;
   const button = document.querySelector("#save-employee-subdepartment");
@@ -2857,14 +3323,17 @@ async function saveEmployeeSubdepartment(event) {
 
   setBusy(button, true, "Menyimpan…");
   try {
-    const { data, error } = await client.from("employees")
-      .update({ sub_department_id: subDepartmentId })
-      .eq("id", employeeId)
-      .select("id, sub_department_id")
-      .single();
+    const { data, error } = await client.rpc("update_employee_subdepartment", {
+      p_employee_id: employeeId,
+      p_sub_department_id: subDepartmentId
+    });
     if (error) throw error;
-    const employee = employees.find((item) => item.id === data.id);
-    if (employee) employee.sub_department_id = data.sub_department_id;
+    const savedEmployee = Array.isArray(data) ? data[0] : data;
+    if (!savedEmployee?.employee_id) {
+      throw new Error("Respons penetapan subfungsi tidak lengkap.");
+    }
+    const employee = employees.find((item) => item.id === savedEmployee.employee_id);
+    if (employee) employee.sub_department_id = savedEmployee.sub_department_id;
     renderSubdepartmentControls();
     showToast("Penetapan subfungsi karyawan berhasil disimpan.");
   } catch (error) {
@@ -2877,9 +3346,18 @@ async function saveEmployeeSubdepartment(event) {
 
 async function handleSubdepartmentManagerClick(event) {
   const button = event.target.closest("button[data-subdepartment-action]");
-  if (!button || !isAdmin()) return;
+  if (!button) return;
   const { subdepartmentAction: action, id } = button.dataset;
   const isSubdepartment = action === "remove-subdepartment";
+  if (!canManageHrFeature(isSubdepartment ? "subdepartments" : "supervisors")) {
+    showToast(
+      isSubdepartment
+        ? "Anda tidak diizinkan mengelola subfungsi."
+        : "Anda tidak diizinkan mengelola pengawas subfungsi.",
+      true
+    );
+    return;
+  }
   const confirmed = window.confirm(isSubdepartment
     ? "Hapus subfungsi ini? Subfungsi yang masih digunakan oleh karyawan tidak dapat dihapus."
     : "Hapus kontak pengawas ini?");
@@ -4003,7 +4481,7 @@ async function submitCheckup(event) {
     }
 
     if (error.code === "23505") {
-      showToast("Karyawan ini sudah mengisi checkup hari ini.", true);
+      showToast("Pekerja ini sudah mengisi checkup hari ini.", true);
       try {
         const dailyCheckup = guestMode
           ? await loadGuestDailyStatus()
@@ -4045,26 +4523,29 @@ async function addEmployee(event) {
       }
     } catch (error) {
       console.error("Could not verify employee-creation permission:", error);
-      showToast(`Gagal memverifikasi izin penambahan karyawan: ${error.message}`, true);
+      showToast(`Gagal memverifikasi izin penambahan pekerja: ${error.message}`, true);
       return;
     }
   }
   const canAddAsGuest = canAddGuestEmployee();
   if (currentProfile?.role === "hr" && !hrEmployeeCreationEnabled) {
-    showToast("HR tidak diizinkan menambah karyawan baru.", true);
+    showToast("HR tidak diizinkan menambah pekerja baru.", true);
     return;
   }
   if (!canAddAuthenticatedEmployee() && !canAddAsGuest) {
-    showToast("Hanya HR/admin yang dapat menambah master karyawan.", true);
+    showToast("Hanya HR/admin yang dapat menambah master pekerja.", true);
     return;
   }
-  const departmentId = departmentSelect.value;
+  const departmentSelectForNewEmployee = document.querySelector("#new-employee-department-select");
+  const departmentId = departmentSelectForNewEmployee.classList.contains("hidden")
+    ? employeeModal.dataset.departmentId
+    : departmentSelectForNewEmployee.value;
   const name = document.querySelector("#new-employee-name").value.trim();
   const employeeMetadata = {
     employment_status: document.querySelector("#new-employee-status").value || null,
     job_title: document.querySelector("#new-employee-job-title").value.trim() || null,
     work_pattern: document.querySelector("#new-employee-work-pattern").value || null,
-    sub_department_id: isAdmin()
+    sub_department_id: canManageHrFeature("employee_subdepartment")
       ? document.querySelector("#new-employee-subdepartment").value || null
       : null
   };
@@ -4072,14 +4553,14 @@ async function addEmployee(event) {
     ? document.querySelector("#new-employee-active").checked
     : true;
   if (!departmentId || !name) {
-    showToast("Fungsi dan nama karyawan wajib diisi.", true);
+    showToast("Fungsi dan nama pekerja wajib diisi.", true);
     return;
   }
   if (
     employeeMetadata.sub_department_id
     && !subdepartmentsForDepartment(departmentId).some((item) => item.id === employeeMetadata.sub_department_id)
   ) {
-    showToast("Subfungsi tidak sesuai dengan fungsi karyawan.", true);
+    showToast("Subfungsi tidak sesuai dengan fungsi pekerja.", true);
     return;
   }
 
@@ -4186,11 +4667,30 @@ async function addEmployee(event) {
       employees.push(employee);
     }
     renderSubdepartmentControls();
-    departmentSelect.value = departmentId;
-    updateEmployeeOptions();
-    employeeSelect.value = employee.id;
-    syncDepartmentTabsUI(departmentId);
-    syncEmployeeListUI(employee.id);
+    let managementRefreshError = null;
+    if (employeeModal.dataset.managementAdd === "true") {
+      const managementDepartmentSelect = document.querySelector("#employee-management-department");
+      employeeManagementDepartmentId = employee.department_id;
+      managementDepartmentSelect.value = employee.department_id;
+      employeeManagementSelectedId = employee.id;
+      document.querySelector("#employee-management-search").value = "";
+      try {
+        await loadEmployeeManagementList();
+      } catch (error) {
+        console.error("Could not refresh employee management list after adding an employee:", error);
+        managementRefreshError = error;
+        if (!employeeManagementEmployees.some((existing) => existing.id === employee.id)) {
+          employeeManagementEmployees.push(employee);
+        }
+        renderEmployeeManagementPicker();
+      }
+    } else {
+      departmentSelect.value = departmentId;
+      updateEmployeeOptions();
+      employeeSelect.value = employee.id;
+      syncDepartmentTabsUI(departmentId);
+      syncEmployeeListUI(employee.id);
+    }
     if (guestMode) {
       document.querySelector("#profile-department").value = departmentId;
       updateProfileEmployeeOptions(employee.id);
@@ -4210,12 +4710,15 @@ async function addEmployee(event) {
     }
     employeeModal.close();
     document.querySelector("#employee-form").reset();
-    showToast(employee.id.startsWith("temp_emp_")
-      ? "Nama karyawan disimpan ke antrean offline."
-      : (canAddAsGuest ? "Nama karyawan berhasil ditambahkan." : "Master karyawan berhasil disimpan."));
+    showToast(managementRefreshError
+      ? `Karyawan berhasil ditambahkan, tetapi daftar tidak dapat diperbarui: ${managementRefreshError.message}`
+      : employee.id.startsWith("temp_emp_")
+        ? "Nama pekerja disimpan ke antrean offline."
+        : (canAddAsGuest ? "Nama pekerja berhasil ditambahkan." : "Master pekerja berhasil disimpan."),
+    Boolean(managementRefreshError));
   } catch (error) {
     console.error("Employee save failed:", error);
-    showToast(`Gagal menyimpan karyawan: ${error.message}`, true);
+    showToast(`Gagal menyimpan pekerja: ${error.message}`, true);
   } finally {
     setBusy(button, false);
   }
@@ -4242,7 +4745,7 @@ function downloadCsvRows(rows, filename) {
 function triggerCsvDownload(items) {
   if (!items?.length) return false;
   const header = [
-    "Waktu checkup", "Nama karyawan", "Fungsi", "Tekanan sistolik", "Tekanan diastolik",
+    "Waktu checkup", "Nama pekerja", "Fungsi", "Tekanan sistolik", "Tekanan diastolik",
     "Suhu (C)", "Kelelahan (1-5)", "Jumlah jam tidur", "Gejala",
     "Konsumsi obat-obatan yang menyebabkan kantuk dalam 24 jam terakhir", "Konsumsi alkohol dalam 24 jam terakhir",
     "Tenaga medis", "Catatan", "Status",
@@ -4282,12 +4785,12 @@ function triggerCsvDownload(items) {
 function exportMissingDcuCsv() {
   const missingEmployees = getFilteredMissingDcuEmployees();
   if (!missingEmployees.length) {
-    showToast("Tidak ada karyawan yang perlu diekspor.", true);
+    showToast("Tidak ada pekerja yang perlu diekspor.", true);
     return;
   }
   const departmentsById = new Map(departments.map((department) => [department.id, department.name]));
   const rows = [
-    ["Nama Karyawan", "Fungsi", "Status Pekerja", "Pola Kerja"],
+    ["Nama Pekerja", "Fungsi", "Status Pekerja", "Pola Kerja"],
     ...missingEmployees.map((employee) => [
       employee.full_name,
       departmentsById.get(employee.department_id) ?? "",
@@ -4296,7 +4799,7 @@ function exportMissingDcuCsv() {
     ])
   ];
   downloadCsvRows(rows, `belum-dcu-${getAppToday()}.csv`);
-  showToast("Daftar karyawan belum DCU berhasil diunduh.");
+  showToast("Daftar pekerja belum DCU berhasil diunduh.");
 }
 
 async function exportCsv() {
@@ -4309,7 +4812,7 @@ async function exportCsv() {
       return;
     }
 
-    // Jika bukan Admin (misal karyawan atau HR), langsung unduh CSV tanpa modal opsi hapus
+    // Jika bukan Admin (misal pekerja atau HR), langsung unduh CSV tanpa modal opsi hapus
     if (currentProfile?.role !== "admin") {
       triggerCsvDownload(checkups);
       showToast("File CSV riwayat berhasil diunduh.");
@@ -4343,7 +4846,9 @@ function setTab(tabName, refreshData = true) {
   if (
     tabName === "settings"
     && currentProfile?.role !== "admin"
-    && !(currentProfile?.role === "hr" && hrSettingsAccessConfig.enabled)
+    && !(currentProfile?.role === "hr" && (
+      hrSettingsAccessConfig.enabled || hrSettingsAccessConfig.allowed_features.length > 0
+    ))
   ) return;
   if (tabName === "summary") {
     document.querySelector("#history-readiness").value = "";
@@ -4369,19 +4874,42 @@ function setTab(tabName, refreshData = true) {
         console.error("HR settings access config load failed:", error);
         showToast(`Gagal memuat akses pengaturan HR: ${error.message}`, true);
       });
+      loadEmployeeManagementList().catch((error) => {
+        console.error("Employee management list load failed:", error);
+        showToast(`Gagal memuat daftar karyawan: ${error.message}`, true);
+      });
     } else if (currentProfile?.role === "hr") {
-      loadHrSettingsAccessConfig(true).then(() => {
-        if (!hrSettingsAccessConfig.enabled) {
+      Promise.all([
+        loadHrSettingsAccessConfig(true)
+      ]).then(() => {
+        syncHrFeatureAccess();
+        if (!hrSettingsAccessConfig.enabled && hrSettingsAccessConfig.allowed_features.length === 0) {
           applyRoleMenuVisibility();
           setTab("summary", false);
           return;
         }
-        return loadHrSettings();
+        const hrSettingsForm = document.querySelector("#hr-settings-form");
+        hrSettingsForm.classList.toggle("hidden", !hrSettingsAccessConfig.enabled);
+        document.querySelector("#hr-settings-access-form").classList.add("hidden");
+        const tasks = [];
+        if (hrSettingsAccessConfig.enabled) tasks.push(loadHrSettings());
+        if (canManageHrFeature("employee_data")) tasks.push(loadEmployeeManagementList());
+        if (
+          canManageHrFeature("subdepartments")
+          || canManageHrFeature("supervisors")
+          || canManageHrFeature("employee_subdepartment")
+        ) {
+          tasks.push(loadSubdepartments());
+        }
+        if (canManageHrFeature("employee_subdepartment")) tasks.push(loadEmployees());
+        return Promise.all(tasks);
       }).catch((error) => {
         console.error("HR settings load failed:", error);
         applyRoleMenuVisibility();
         showToast(`Gagal memuat pengaturan HR: ${error.message}`, true);
-        if (!hrSettingsAccessConfig.enabled) setTab("summary", false);
+        if (!hrSettingsAccessConfig.enabled && hrSettingsAccessConfig.allowed_features.length === 0) {
+          setTab("summary", false);
+        }
       });
     }
   }
@@ -4435,7 +4963,14 @@ async function initializeApp(user) {
   loggedInIdentity.classList.toggle("hidden", !user.email);
   adminSettings = [];
   adminSettingsLoaded = false;
-  hrSettingsAccessConfig = { enabled: false, allowed_settings: [] };
+  employeeManagementEmployees = [];
+  employeeManagementSelectedId = "";
+  employeeManagementDepartmentId = "all";
+  document.querySelector("#employee-management-search").value = "";
+  document.querySelector("#employee-management-department").value = "";
+  document.querySelector("#employee-management-employee").value = "";
+  document.querySelector("#edit-employee-button").disabled = true;
+  hrSettingsAccessConfig = { enabled: false, allowed_settings: [], allowed_features: [] };
   hrSettingsAccessConfigLoaded = false;
   hrSettings = [];
   hrSettingsLoaded = false;
@@ -4464,6 +4999,10 @@ async function initializeApp(user) {
     throw new Error("Akun belum memiliki profil akses. Hubungi administrator.");
   }
   currentProfile = data;
+  document.querySelector("#settings-admin-heading").classList.toggle(
+    "hidden",
+    currentProfile.role !== "admin"
+  );
   if (currentProfile.role === "hr") {
     await loadHrEmployeeCreationSetting();
     await loadHrSettingsAccessConfig();
@@ -4474,9 +5013,12 @@ async function initializeApp(user) {
   if (isAdmin()) await loadAdminHrMenuVisibility();
   document.querySelector("#admin-settings-form").classList.toggle("hidden", currentProfile.role !== "admin");
   document.querySelector("#hr-settings-access-form").classList.toggle("hidden", currentProfile.role !== "admin");
-  document.querySelector("#hr-settings-form").classList.toggle("hidden", currentProfile.role !== "hr");
+  document.querySelector("#hr-settings-form").classList.toggle(
+    "hidden",
+    currentProfile.role !== "hr" || !hrSettingsAccessConfig.enabled
+  );
   document.querySelector("#menu-visibility-form").classList.toggle("hidden", currentProfile.role !== "admin");
-  document.querySelector("#subdepartment-management").classList.toggle("hidden", !isAdmin());
+  syncHrFeatureAccess();
   await syncBootstrapSettings();
   resetCheckupResponses();
   todayCheckupCount = null;
@@ -4591,8 +5133,15 @@ async function initializeApp(user) {
 async function initializeGuestApp() {
   guestStatusRequest += 1;
   currentProfile = null;
+  document.querySelector("#settings-admin-heading").classList.add("hidden");
   hrEmployeeCreationEnabled = false;
-  hrSettingsAccessConfig = { enabled: false, allowed_settings: [] };
+  employeeManagementSelectedId = "";
+  employeeManagementDepartmentId = "all";
+  document.querySelector("#employee-management-search").value = "";
+  document.querySelector("#employee-management-department").value = "";
+  document.querySelector("#employee-management-employee").value = "";
+  document.querySelector("#edit-employee-button").disabled = true;
+  hrSettingsAccessConfig = { enabled: false, allowed_settings: [], allowed_features: [] };
   hrSettingsAccessConfigLoaded = false;
   hrSettings = [];
   hrSettingsLoaded = false;
@@ -4604,6 +5153,8 @@ async function initializeGuestApp() {
   document.querySelector(".bottom-nav").style.removeProperty("grid-template-columns");
   document.querySelector("#admin-settings-form").classList.add("hidden");
   document.querySelector("#hr-settings-access-form").classList.add("hidden");
+  document.querySelector("#employee-management").classList.add("hidden");
+  employeeManagementEmployees = [];
   document.querySelector("#hr-settings-form").classList.add("hidden");
   document.querySelector("#menu-visibility-form").classList.add("hidden");
   document.querySelector("#subdepartment-management").classList.add("hidden");
@@ -4784,6 +5335,9 @@ async function handleSignOut() {
   subdepartments = [];
   subdepartmentSupervisors = [];
   employees = [];
+  employeeManagementEmployees = [];
+  employeeManagementSelectedId = "";
+  employeeManagementDepartmentId = "all";
   checkups = [];
   historyList.replaceChildren();
   resultCard.replaceChildren();
@@ -4808,6 +5362,49 @@ function bindEvents() {
   document.querySelector("#subdepartment-form").addEventListener("submit", saveSubdepartment);
   document.querySelector("#supervisor-form").addEventListener("submit", saveSupervisor);
   document.querySelector("#employee-subdepartment-form").addEventListener("submit", saveEmployeeSubdepartment);
+  document.querySelector("#employee-management-search").addEventListener("input", renderEmployeeManagementPicker);
+  document.querySelector("#employee-management-search-clear").addEventListener("click", () => {
+    document.querySelector("#employee-management-search").value = "";
+    renderEmployeeManagementPicker();
+  });
+  document.querySelector("#employee-management-department").addEventListener("change", (event) => {
+    employeeManagementDepartmentId = event.target.value || "all";
+    clearEmployeeManagementSelection();
+    renderEmployeeManagementPicker();
+  });
+  document.querySelector("#employee-management-employee").addEventListener("change", (event) => {
+    employeeManagementSelectedId = event.target.value;
+    document.querySelector("#edit-employee-button").disabled = !employeeManagementSelectedId;
+  });
+  document.querySelector("#employee-management-add").addEventListener("click", openEmployeeModalFromManagement);
+  document.querySelector("#new-employee-department-select").addEventListener("change", (event) => {
+    populateSubdepartmentSelect(
+      document.querySelector("#new-employee-subdepartment"),
+      event.target.value
+    );
+  });
+  document.querySelector("#edit-employee-button").addEventListener("click", () => {
+    openEmployeeEditModal(employeeManagementSelectedId);
+  });
+  document.querySelector("#employee-edit-form").addEventListener("submit", saveEmployeeData);
+  document.querySelector("#employee-edit-department").addEventListener("change", (event) => {
+    const employee = employeeManagementEmployees.find(
+      (item) => item.id === employeeEditModal.dataset.employeeId
+    );
+    const selectedSubdepartmentId = event.target.value === employeeEditModal.dataset.originalDepartmentId
+      ? employee?.sub_department_id ?? ""
+      : "";
+    populateSubdepartmentSelect(
+      document.querySelector("#employee-edit-subdepartment"),
+      event.target.value,
+      selectedSubdepartmentId
+    );
+  });
+  document.querySelector("#close-employee-edit-modal").addEventListener("click", () => employeeEditModal.close());
+  document.querySelector("#cancel-employee-edit").addEventListener("click", () => employeeEditModal.close());
+  employeeEditModal.addEventListener("click", (event) => {
+    if (event.target === employeeEditModal) employeeEditModal.close();
+  });
   document.querySelector("#subdepartment-employee").addEventListener("change", renderSubdepartmentControls);
   document.querySelector("#subdepartment-supervisor-list").addEventListener("click", handleSubdepartmentManagerClick);
   document.querySelector("#reload-admin-settings").addEventListener("click", () => {
