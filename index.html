@@ -435,7 +435,7 @@
         <form id="hr-settings-access-form" class="mb-5 hidden space-y-3">
           <div class="panel-card">
             <h2 class="font-display text-lg font-bold text-slate-900">Akses pengaturan untuk HR</h2>
-            <p class="mt-1 text-sm leading-5 text-slate-500">Atur akses HR ke Pengaturan, perubahan pengaturan aplikasi, dan fitur pengelolaan karyawan/subfungsi.</p>
+            <p class="mt-1 text-sm leading-5 text-slate-500">Atur akses HR ke Pengaturan, perubahan pengaturan aplikasi, dan fitur pengelolaan pekerja/subfungsi.</p>
             <label class="mt-4 flex items-center justify-between gap-3">
               <span class="field-label">Izinkan HR mengakses Pengaturan</span>
               <input id="hr-settings-enabled" class="toggle-input" type="checkbox">
@@ -463,8 +463,8 @@
         </form>
         <section id="employee-management" class="mb-5 hidden space-y-3">
           <div>
-            <h2 class="font-display text-lg font-bold text-slate-900">Data karyawan</h2>
-            <p class="mt-1 text-sm leading-5 text-slate-500">Ubah informasi karyawan, termasuk departemen dan pola kerja.</p>
+            <h2 class="font-display text-lg font-bold text-slate-900">Data pekerja</h2>
+            <p class="mt-1 text-sm leading-5 text-slate-500">Ubah informasi pekerja, termasuk departemen dan pola kerja.</p>
           </div>
           <div class="panel-card space-y-3">
             <label class="field-label" id="employee-management-department-label" for="employee-management-department">Fungsi</label>
@@ -476,20 +476,20 @@
             </select>
             <div class="mt-4">
               <div class="mb-2 flex items-center justify-between gap-2">
-                <label class="field-label" id="employee-management-employee-label" for="employee-management-employee">Nama karyawan <span id="employee-management-count-badge" class="font-normal text-slate-400"></span></label>
-                <button id="employee-management-add" class="secondary-button min-h-[36px] py-1 gap-1 px-2.5 text-[11px] hidden" type="button" aria-label="Tambah karyawan baru" title="Tambah karyawan"><i data-lucide="user-plus"></i>Tambah</button>
+                <label class="field-label" id="employee-management-employee-label" for="employee-management-employee">Nama pekerja <span id="employee-management-count-badge" class="font-normal text-slate-400"></span></label>
+                <button id="employee-management-add" class="secondary-button min-h-[36px] py-1 gap-1 px-2.5 text-[11px] hidden" type="button" aria-label="Tambah pekerja baru" title="Tambah pekerja"><i data-lucide="user-plus"></i>Tambah</button>
               </div>
               <div id="employee-management-search-wrap" class="employee-search-wrap mb-2">
                 <i data-lucide="search" class="employee-search-icon"></i>
-                <input id="employee-management-search" class="employee-search-input" type="search" placeholder="Cari nama karyawan..." autocomplete="off">
+                <input id="employee-management-search" class="employee-search-input" type="search" placeholder="Cari nama pekerja..." autocomplete="off">
                 <button id="employee-management-search-clear" class="employee-search-clear hidden" type="button" aria-label="Hapus pencarian"><i data-lucide="x"></i></button>
               </div>
               <div id="employee-management-list-scroll-wrap" class="employee-list-scroll-wrap overflow-y-auto rounded-xl border border-slate-200 bg-slate-50/50 p-1.5" style="--visible-limit: 4;">
                 <div id="employee-management-list" class="space-y-1.5" role="radiogroup" aria-labelledby="employee-management-employee-label"></div>
               </div>
-              <p id="employee-management-scroll-hint" class="mt-1.5 flex items-center gap-1 text-[11px] text-slate-400 hidden"><i data-lucide="chevrons-down" class="h-3.5 w-3.5"></i> Scroll ke bawah untuk memilih karyawan lainnya</p>
+              <p id="employee-management-scroll-hint" class="mt-1.5 flex items-center gap-1 text-[11px] text-slate-400 hidden"><i data-lucide="chevrons-down" class="h-3.5 w-3.5"></i> Scroll ke bawah untuk memilih pekerja lainnya</p>
               <select id="employee-management-employee" class="sr-only" aria-hidden="true" tabindex="-1">
-                <option value="">Pilih karyawan</option>
+                <option value="">Pilih pekerja</option>
               </select>
             </div>
             <button id="edit-employee-button" class="primary-button w-full" type="button" disabled><i data-lucide="pencil"></i> Edit Informasi</button>
@@ -629,7 +629,7 @@
         <div class="mb-5 flex items-start justify-between">
           <div>
             <p class="eyebrow">MASTER DATA</p>
-            <h2 id="employee-edit-title" class="mt-1 font-display text-xl font-extrabold text-slate-900">Edit karyawan</h2>
+            <h2 id="employee-edit-title" class="mt-1 font-display text-xl font-extrabold text-slate-900">Edit pekerja</h2>
           </div>
           <button id="close-employee-edit-modal" class="icon-button" type="button" aria-label="Tutup"><i data-lucide="x"></i></button>
         </div>
@@ -664,7 +664,7 @@
         </div>
         <label class="mt-4 flex items-center gap-3 text-sm font-semibold text-slate-700" for="employee-edit-active">
           <input id="employee-edit-active" class="toggle-input" type="checkbox">
-          Karyawan aktif
+          Pekerja aktif
         </label>
         <div class="mt-5 grid grid-cols-2 gap-2">
           <button id="cancel-employee-edit" class="secondary-button w-full" type="button">Batal</button>

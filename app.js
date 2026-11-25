@@ -113,7 +113,7 @@ let employeeDisplayLimit = (typeof DEFAULT_EMPLOYEE_DISPLAY_LIMIT === "number" &
   ? DEFAULT_EMPLOYEE_DISPLAY_LIMIT
   : 4;
 const HR_FEATURES = [
-  { key: "employee_data", label: "Mengubah data karyawan" },
+  { key: "employee_data", label: "Mengubah data pekerja" },
   { key: "subdepartments", label: "Menambah atau menghapus subfungsi" },
   { key: "supervisors", label: "Menambah atau menghapus pengawas subfungsi" },
   { key: "employee_subdepartment", label: "Menetapkan subfungsi pekerja" }
@@ -1295,7 +1295,7 @@ async function loadHrEmployeeCreationSetting() {
   const { data, error } = await client.rpc("is_hr_employee_creation_enabled");
   if (error) throw error;
   if (typeof data !== "boolean") {
-    throw new Error("Supabase mengembalikan status izin penambahan karyawan HR yang tidak valid.");
+    throw new Error("Supabase mengembalikan status izin penambahan pekerja HR yang tidak valid.");
   }
 
   hrEmployeeCreationEnabled = data;
@@ -1313,7 +1313,7 @@ async function loadGuestEmployeeCreationSetting() {
   const { data, error } = await client.rpc("is_guest_employee_creation_enabled");
   if (error) throw error;
   if (typeof data !== "boolean") {
-    throw new Error("Supabase mengembalikan status izin penambahan karyawan tamu yang tidak valid.");
+    throw new Error("Supabase mengembalikan status izin penambahan pekerja tamu yang tidak valid.");
   }
 
   guestEmployeeCreationEnabled = data;
@@ -1751,7 +1751,7 @@ function updateProfileEmployeeOptions(selectedId = "") {
   const departmentEmployees = employees.filter((item) =>
     item.is_active && (item.department_id === departmentId || showAllEmployees)
   );
-  select.innerHTML = '<option value="">Pilih nama karyawan</option>';
+  select.innerHTML = '<option value="">Pilih nama pekerja</option>';
   for (const employee of departmentEmployees) {
     const option = document.createElement("option");
     option.value = employee.id;
@@ -1764,7 +1764,7 @@ function updateProfileEmployeeOptions(selectedId = "") {
   if (!departmentId && !showAllEmployees) {
     select.innerHTML = '<option value="">Pilih fungsi terlebih dahulu</option>';
   } else if (!select.options.length || (select.options.length === 1 && !select.options[0].value)) {
-    select.innerHTML = '<option value="">Belum ada karyawan terdaftar</option>';
+    select.innerHTML = '<option value="">Belum ada pekerja terdaftar</option>';
   }
   select.disabled = false;
   if (employees.some((item) => item.id === employeeToSelect && item.is_active)) {
@@ -1869,7 +1869,7 @@ function showDailyCheckupStatus(checkup) {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'secondary-button mt-4 w-full admin-employee-switch-btn';
-  btn.innerHTML = '<i data-lucide="user-round" class="mr-2 icon-text-sm"></i>Pilih karyawan lain';
+  btn.innerHTML = '<i data-lucide="user-round" class="mr-2 icon-text-sm"></i>Pilih pekerja lain';
   btn.addEventListener('click', () => {
     hideDailyCheckupStatus();
     setActiveStep(1);
@@ -2079,7 +2079,7 @@ function openEmployeeModal(departmentId, canAddAsGuest, options = {}) {
   employeeModal.dataset.departmentId = departmentId || "";
   employeeModal.dataset.managementAdd = options.managementAdd ? "true" : "false";
   document.querySelector("#employee-modal-eyebrow").textContent = canAddAsGuest ? "TAMBAH NAMA" : "MASTER DATA";
-  document.querySelector("#employee-modal-title").textContent = canAddAsGuest ? "Tambahkan nama Anda" : "Tambah karyawan";
+  document.querySelector("#employee-modal-title").textContent = canAddAsGuest ? "Tambahkan nama Anda" : "Tambah pekerja";
   document.querySelector("#guest-employee-note").classList.toggle("hidden", !canAddAsGuest);
   document.querySelector("#new-employee-active-wrap").classList.toggle("hidden", canAddAsGuest);
   const departmentSelectWrap = document.querySelector("#new-employee-department-select-wrap");
@@ -2114,12 +2114,12 @@ async function openEmployeeModalFromManagement() {
       await loadHrEmployeeCreationSetting();
     } catch (error) {
       console.error("Could not verify HR employee-creation permission:", error);
-      showToast(`Gagal memverifikasi izin penambahan karyawan: ${error.message}`, true);
+      showToast(`Gagal memverifikasi izin penambahan pekerja: ${error.message}`, true);
       return;
     }
   }
   if (!canAddAuthenticatedEmployee()) {
-    showToast("Anda tidak diizinkan menambah karyawan baru.", true);
+    showToast("Anda tidak diizinkan menambah pekerja baru.", true);
     return;
   }
 
@@ -2129,7 +2129,7 @@ async function openEmployeeModalFromManagement() {
       ? ""
       : employeeManagementDepartmentId;
   if (!selectedDepartmentId && departments.length === 0) {
-    showToast("Tambahkan fungsi terlebih dahulu sebelum menambah karyawan.", true);
+    showToast("Tambahkan fungsi terlebih dahulu sebelum menambah pekerja.", true);
     return;
   }
   openEmployeeModal(selectedDepartmentId, false, {
@@ -2198,7 +2198,7 @@ function validateStep(step) {
       return false;
     }
     if (!employeeSelect.value) {
-      showToast("Pilih nama karyawan untuk melanjutkan.", true);
+      showToast("Pilih nama pekerja untuk melanjutkan.", true);
       return false;
     }
     if (guestMode) {
@@ -2401,9 +2401,9 @@ function renderEmployeeList(departmentId = currentCheckupTab) {
 
   if (displayEmployees.length === 0) {
     if (checkupSearchQuery) {
-      listContainer.innerHTML = `<div class="p-4 text-center text-xs text-slate-400">Tidak ada karyawan yang cocok dengan "${escapeHtml(checkupSearchQuery)}"</div>`;
+      listContainer.innerHTML = `<div class="p-4 text-center text-xs text-slate-400">Tidak ada pekerja yang cocok dengan "${escapeHtml(checkupSearchQuery)}"</div>`;
     } else {
-      listContainer.innerHTML = '<div class="p-4 text-center text-xs text-slate-400">Belum ada karyawan terdaftar di fungsi ini</div>';
+      listContainer.innerHTML = '<div class="p-4 text-center text-xs text-slate-400">Belum ada pekerja terdaftar di fungsi ini</div>';
     }
     return;
   }
@@ -2613,9 +2613,9 @@ function renderProfileEmployeeList(departmentId = currentProfileTab) {
 
   if (displayEmployees.length === 0) {
     if (profileSearchQuery) {
-      listContainer.innerHTML = `<div class="p-4 text-center text-xs text-slate-400">Tidak ada karyawan yang cocok dengan "${escapeHtml(profileSearchQuery)}"</div>`;
+      listContainer.innerHTML = `<div class="p-4 text-center text-xs text-slate-400">Tidak ada pekerja yang cocok dengan "${escapeHtml(profileSearchQuery)}"</div>`;
     } else {
-      listContainer.innerHTML = '<div class="p-4 text-center text-xs text-slate-400">Belum ada karyawan terdaftar di fungsi ini</div>';
+      listContainer.innerHTML = '<div class="p-4 text-center text-xs text-slate-400">Belum ada pekerja terdaftar di fungsi ini</div>';
     }
     return;
   }
@@ -2715,7 +2715,7 @@ function updateEmployeeOptions() {
   const departmentEmployees = employees.filter((employee) =>
     employee.is_active && (employee.department_id === departmentId || showAllEmployees)
   );
-  employeeSelect.innerHTML = '<option value="">Pilih nama karyawan</option>';
+  employeeSelect.innerHTML = '<option value="">Pilih nama pekerja</option>';
   for (const employee of departmentEmployees) {
     const option = document.createElement("option");
     option.value = employee.id;
@@ -2729,18 +2729,18 @@ function updateEmployeeOptions() {
   if (!departmentId && !showAllEmployees) {
     employeeSelect.innerHTML = '<option value="">Pilih fungsi terlebih dahulu</option>';
   } else if (departmentEmployees.length === 0) {
-    employeeSelect.innerHTML = '<option value="">Belum ada karyawan terdaftar</option>';
+    employeeSelect.innerHTML = '<option value="">Belum ada pekerja terdaftar</option>';
   }
   const addButton = document.querySelector("#open-employee-modal");
   const canAddEmployee = canAddAuthenticatedEmployee() || canAddGuestEmployee();
   syncEmployeeCreationButtons();
   addButton.disabled = false;
-  addButton.title = canAddEmployee ? "Tambah nama karyawan" : "Hubungi HR untuk menambahkan karyawan";
+  addButton.title = canAddEmployee ? "Tambah nama pekerja" : "Hubungi HR untuk menambahkan pekerja";
   document.querySelector("#employee-hint").textContent = canAddAuthenticatedEmployee()
-    ? "Karyawan baru dapat ditambahkan oleh HR/admin."
+    ? "Pekerja baru dapat ditambahkan oleh HR/admin."
     : guestMode && canAddEmployee
       ? "Nama belum ada? Tambahkan nama Anda sendiri."
-      : "Tidak menemukan nama? Hubungi HR untuk menambahkan karyawan.";
+      : "Tidak menemukan nama? Hubungi HR untuk menambahkan pekerja.";
   if (guestMode) updateProfileEmployeeOptions();
 
   if (DEPARTMENT_SELECTION_MODE === "dropdown") {
@@ -2843,7 +2843,7 @@ function populateSubdepartmentSelect(select, departmentId, selectedId = "", empt
 
 async function loadEmployeeManagementList() {
   if (!canEditEmployeeData()) {
-    throw new Error("Anda tidak diizinkan mengubah data karyawan.");
+    throw new Error("Anda tidak diizinkan mengubah data pekerja.");
   }
 
   const pageSize = 1000;
@@ -2947,7 +2947,7 @@ function renderEmployeeManagementPicker() {
   }
 
   if (EMPLOYEE_SELECTION_MODE === "list") {
-    employeeSelectForManagement.replaceChildren(new Option("Pilih karyawan", ""));
+    employeeSelectForManagement.replaceChildren(new Option("Pilih pekerja", ""));
     for (const employee of displayedEmployees) {
       employeeSelectForManagement.add(new Option(employee.full_name, employee.id));
     }
@@ -2967,10 +2967,10 @@ function renderEmployeeManagementPicker() {
       const emptyState = document.createElement("div");
       emptyState.className = "p-4 text-center text-xs text-slate-400";
       emptyState.textContent = searchQuery
-        ? `Tidak ada karyawan yang cocok dengan "${searchInput.value.trim()}"`
+        ? `Tidak ada pekerja yang cocok dengan "${searchInput.value.trim()}"`
         : departmentId && departmentId !== "all"
-          ? "Belum ada karyawan terdaftar di fungsi ini"
-          : "Belum ada karyawan terdaftar";
+          ? "Belum ada pekerja terdaftar di fungsi ini"
+          : "Belum ada pekerja terdaftar";
       employeeList.append(emptyState);
     } else {
       for (const employee of displayedEmployees) {
@@ -3023,8 +3023,8 @@ function renderEmployeeManagementPicker() {
       !departmentId && !showAllEmployees
         ? "Pilih fungsi terlebih dahulu"
         : displayedEmployees.length
-          ? "Pilih karyawan"
-          : "Belum ada karyawan terdaftar",
+          ? "Pilih pekerja"
+          : "Belum ada pekerja terdaftar",
       ""
     ));
     for (const employee of displayedEmployees) {
@@ -3046,12 +3046,12 @@ function renderEmployeeManagementPicker() {
 
 function openEmployeeEditModal(employeeId) {
   if (!canEditEmployeeData()) {
-    showToast("Anda tidak diizinkan mengubah data karyawan.", true);
+    showToast("Anda tidak diizinkan mengubah data pekerja.", true);
     return;
   }
   const employee = employeeManagementEmployees.find((item) => item.id === employeeId);
   if (!employee) {
-    showToast("Data karyawan tidak ditemukan. Muat ulang daftar karyawan.", true);
+    showToast("Data pekerja tidak ditemukan. Muat ulang daftar pekerja.", true);
     return;
   }
 
@@ -3079,7 +3079,7 @@ function openEmployeeEditModal(employeeId) {
 async function saveEmployeeData(event) {
   event.preventDefault();
   if (!canEditEmployeeData()) {
-    showToast("Anda tidak diizinkan mengubah data karyawan.", true);
+    showToast("Anda tidak diizinkan mengubah data pekerja.", true);
     return;
   }
 
@@ -3090,14 +3090,14 @@ async function saveEmployeeData(event) {
     ? document.querySelector("#employee-edit-subdepartment").value || null
     : employeeEditModal.dataset.originalSubDepartmentId || null;
   if (!employeeId || !departmentId || !name) {
-    showToast("Departemen dan nama karyawan wajib diisi.", true);
+    showToast("Departemen dan nama pekerja wajib diisi.", true);
     return;
   }
   if (
     subDepartmentId
     && !subdepartmentsForDepartment(departmentId).some((item) => item.id === subDepartmentId)
   ) {
-    showToast("Subfungsi tidak sesuai dengan departemen karyawan.", true);
+    showToast("Subfungsi tidak sesuai dengan departemen pekerja.", true);
     return;
   }
 
@@ -3118,7 +3118,7 @@ async function saveEmployeeData(event) {
 
     const savedEmployee = Array.isArray(data) ? data[0] : data;
     if (!savedEmployee?.id) {
-      throw new Error("Respons penyimpanan data karyawan tidak lengkap.");
+      throw new Error("Respons penyimpanan data pekerja tidak lengkap.");
     }
 
     employeeEditModal.close();
@@ -3136,14 +3136,14 @@ async function saveEmployeeData(event) {
         await loadDailyCoverage();
         renderSummary();
       }
-      showToast("Data karyawan berhasil diperbarui.");
+      showToast("Data pekerja berhasil diperbarui.");
     } catch (refreshError) {
       console.error("Employee updated but the displayed data could not be refreshed:", refreshError);
       showToast(`Data tersimpan, tetapi tampilan gagal diperbarui: ${refreshError.message}`, true);
     }
   } catch (error) {
     console.error("Employee update failed:", error);
-    showToast(`Gagal memperbarui data karyawan: ${error.message}`, true);
+    showToast(`Gagal memperbarui data pekerja: ${error.message}`, true);
   } finally {
     setBusy(button, false);
   }
@@ -3177,7 +3177,7 @@ function renderSubdepartmentControls() {
     supervisorsSubdepartment.value = selectedSubdepartmentId;
   }
 
-  employeeSelectForAssignment.replaceChildren(new Option("Pilih karyawan", ""));
+  employeeSelectForAssignment.replaceChildren(new Option("Pilih pekerja", ""));
   for (const employee of employees) {
     const departmentName = departments.find((department) => department.id === employee.department_id)?.name ?? "";
     employeeSelectForAssignment.add(new Option(`${employee.full_name} — ${departmentName}`, employee.id));
@@ -3191,7 +3191,7 @@ function renderSubdepartmentControls() {
     employeeSubdepartmentSelect,
     selectedEmployee?.department_id,
     selectedEmployee?.sub_department_id ?? "",
-    selectedEmployee ? "Tanpa subfungsi" : "Pilih karyawan terlebih dahulu"
+    selectedEmployee ? "Tanpa subfungsi" : "Pilih pekerja terlebih dahulu"
   );
   populateSubdepartmentSelect(
     document.querySelector("#new-employee-subdepartment"),
@@ -3317,7 +3317,7 @@ async function saveEmployeeSubdepartment(event) {
   const subDepartmentId = document.querySelector("#employee-subdepartment").value || null;
   const button = document.querySelector("#save-employee-subdepartment");
   if (!employeeId) {
-    showToast("Pilih karyawan terlebih dahulu.", true);
+    showToast("Pilih pekerja terlebih dahulu.", true);
     return;
   }
 
@@ -3335,7 +3335,7 @@ async function saveEmployeeSubdepartment(event) {
     const employee = employees.find((item) => item.id === savedEmployee.employee_id);
     if (employee) employee.sub_department_id = savedEmployee.sub_department_id;
     renderSubdepartmentControls();
-    showToast("Penetapan subfungsi karyawan berhasil disimpan.");
+    showToast("Penetapan subfungsi pekerja berhasil disimpan.");
   } catch (error) {
     console.error("Employee subdepartment assignment failed:", error);
     showToast(`Gagal menyimpan penetapan subfungsi: ${error.message}`, true);
@@ -3359,7 +3359,7 @@ async function handleSubdepartmentManagerClick(event) {
     return;
   }
   const confirmed = window.confirm(isSubdepartment
-    ? "Hapus subfungsi ini? Subfungsi yang masih digunakan oleh karyawan tidak dapat dihapus."
+    ? "Hapus subfungsi ini? Subfungsi yang masih digunakan oleh pekerja tidak dapat dihapus."
     : "Hapus kontak pengawas ini?");
   if (!confirmed) return;
 
@@ -3426,8 +3426,8 @@ async function renderQueueModal() {
     queueList.innerHTML = items.map((item) => {
       const isEmployee = item.action === "add_guest_employee";
       const title = isEmployee
-        ? `Daftar Nama: ${escapeHtml(item.payload?.p_full_name || "Karyawan Baru")}`
-        : `Checkup: ${escapeHtml(employees.find((e) => e.id === item.employee_id)?.full_name || "Karyawan")}`;
+        ? `Daftar Nama: ${escapeHtml(item.payload?.p_full_name || "Pekerja Baru")}`
+        : `Checkup: ${escapeHtml(employees.find((e) => e.id === item.employee_id)?.full_name || "Pekerja")}`;
       const statusPill = item.preliminary_status
         ? `<span class="offline-notice-badge ml-1.5">${statusDetails[item.preliminary_status]?.label || item.preliminary_status}</span>`
         : "";
@@ -3486,7 +3486,7 @@ async function syncOfflineQueue(showToastNotice = false) {
   const checkupItems = pendingItems.filter((i) => i.action === "submit_checkup");
   const resolvedIdMap = new Map();
 
-  // 1. Sinkronkan Karyawan Tamu Baru
+  // 1. Sinkronkan Pekerja Tamu Baru
   for (const item of employeeItems) {
     try {
       const { data, error } = await client.rpc("add_guest_employee", item.payload);
@@ -3504,7 +3504,7 @@ async function syncOfflineQueue(showToastNotice = false) {
       await removeOfflineItem(item.id);
       syncedCount++;
     } catch (err) {
-      console.error("Gagal menyinkronkan penambahan karyawan tamu:", err);
+      console.error("Gagal menyinkronkan penambahan pekerja tamu:", err);
       errorCount++;
       if (err.message && err.message.includes("already registered")) {
         await removeOfflineItem(item.id);
@@ -3709,7 +3709,7 @@ async function loadGuestDirectory() {
         updateSubstanceQuestionVisibility();
         showToast("Menggunakan direktori tersimpan (offline).");
       } else {
-        throw new Error("Data karyawan belum tersedia offline. Hubungkan ke internet setidaknya sekali.");
+        throw new Error("Data pekerja belum tersedia offline. Hubungkan ke internet setidaknya sekali.");
       }
     }
   }
@@ -3775,7 +3775,7 @@ async function loadEmployees() {
       syncEmployeeListUI(selectedEmployee);
     }
   } else {
-    throw new Error("Akun belum ditautkan ke data karyawan. Hubungi administrator.");
+    throw new Error("Akun belum ditautkan ke data pekerja. Hubungi administrator.");
   }
   updateSubstanceQuestionVisibility();
 }
@@ -3938,7 +3938,7 @@ function renderHistory() {
     return `<article class="history-card">
       <div class="flex items-start justify-between gap-2">
         <div class="min-w-0">
-          <h2 class="truncate text-sm font-bold text-slate-900">${escapeHtml(employee?.full_name ?? "Karyawan")}</h2>
+          <h2 class="truncate text-sm font-bold text-slate-900">${escapeHtml(employee?.full_name ?? "Pekerja")}</h2>
           <p class="mt-1 text-xs text-slate-500">${escapeHtml(employee?.departments?.name ?? "—")} · ${escapeHtml(formatDate(checkup.checked_at))}</p>
         </div>
         <span class="status-pill ${status.pill}"><i data-lucide="${status.icon}"></i>${status.label}</span>
@@ -4027,13 +4027,13 @@ function renderMissingDcuModal() {
   document.querySelector("#missing-dcu-count").textContent = isLoaded ? String(missingEmployees.length) : "—";
   exportButton.disabled = !isLoaded || missingEmployees.length === 0;
   list.innerHTML = !isLoaded
-    ? '<div class="empty-state">Memuat daftar karyawan…</div>'
+    ? '<div class="empty-state">Memuat daftar pekerja…</div>'
     : missingEmployees.length
     ? missingEmployees.map((employee) => `<div class="flex items-center justify-between gap-3 rounded-xl border border-slate-200 px-3 py-2.5">
         <span class="min-w-0 truncate text-sm font-semibold text-slate-800">${escapeHtml(employee.full_name)}</span>
         <span class="shrink-0 text-right text-xs text-slate-500">${escapeHtml(departmentsById.get(employee.department_id) ?? "—")}</span>
       </div>`).join("")
-    : '<div class="empty-state">Semua karyawan aktif telah melakukan DCU hari ini.</div>';
+    : '<div class="empty-state">Semua pekerja aktif telah melakukan DCU hari ini.</div>';
   refreshIcons();
 }
 
@@ -4045,7 +4045,7 @@ function getFilteredMissingDcuEmployees() {
 
 function openMissingDcuModal() {
   if (employeesWithoutTodayCheckup === null) {
-    showToast("Daftar karyawan belum tersedia. Coba muat ulang Ringkasan.", true);
+    showToast("Daftar pekerja belum tersedia. Coba muat ulang Ringkasan.", true);
     return;
   }
   selectedMissingDcuDepartmentId = "";
@@ -4175,7 +4175,7 @@ Halo {{employee_name}}, terima kasih telah mengisi pemeriksaan kesehatan harian.
 function showResult(payload, status, checkedAt, isOffline = false) {
   const selectedEmployee = employees.find((employee) => employee.id === payload.employee_id);
   const departmentName = departments.find((department) => department.id === selectedEmployee?.department_id)?.name ?? "—";
-  const employeeName = selectedEmployee?.full_name ?? "Karyawan";
+  const employeeName = selectedEmployee?.full_name ?? "Pekerja";
   const detail = statusDetails[status] ?? statusDetails.need_observation;
   const text = reportText(payload, status, checkedAt, employeeName, departmentName);
   const urgentSymptoms = payload.symptoms.breathing_difficulty
@@ -4711,7 +4711,7 @@ async function addEmployee(event) {
     employeeModal.close();
     document.querySelector("#employee-form").reset();
     showToast(managementRefreshError
-      ? `Karyawan berhasil ditambahkan, tetapi daftar tidak dapat diperbarui: ${managementRefreshError.message}`
+      ? `Pekerja berhasil ditambahkan, tetapi daftar tidak dapat diperbarui: ${managementRefreshError.message}`
       : employee.id.startsWith("temp_emp_")
         ? "Nama pekerja disimpan ke antrean offline."
         : (canAddAsGuest ? "Nama pekerja berhasil ditambahkan." : "Master pekerja berhasil disimpan."),
@@ -4876,7 +4876,7 @@ function setTab(tabName, refreshData = true) {
       });
       loadEmployeeManagementList().catch((error) => {
         console.error("Employee management list load failed:", error);
-        showToast(`Gagal memuat daftar karyawan: ${error.message}`, true);
+        showToast(`Gagal memuat daftar pekerja: ${error.message}`, true);
       });
     } else if (currentProfile?.role === "hr") {
       Promise.all([
@@ -5035,7 +5035,7 @@ async function initializeApp(user) {
   if (isEmployeeAccount()) {
     currentEmployeeId = identityEmployeeId;
     if (!currentEmployeeId) {
-      throw new Error("Akun belum ditautkan ke data karyawan. Hubungi administrator.");
+      throw new Error("Akun belum ditautkan ke data pekerja. Hubungi administrator.");
     }
   } else if (isAdmin() && adminHrMenuVisibility.checkup) {
     currentEmployeeId = identityEmployeeId;
@@ -5108,7 +5108,7 @@ async function initializeApp(user) {
         }
       }).catch((error) => {
         console.error("Realtime employee refresh failed:", error);
-        showToast(`Gagal memperbarui data karyawan: ${error.message}`, true);
+        showToast(`Gagal memperbarui data pekerja: ${error.message}`, true);
       });
     })
     .on("postgres_changes", { event: "*", schema: "public", table: "sub_departments" }, () => {
@@ -5173,7 +5173,7 @@ async function initializeGuestApp() {
     }
     if (guestEmployeeCreationRes.error) throw guestEmployeeCreationRes.error;
     if (typeof guestEmployeeCreationRes.data !== "boolean") {
-      throw new Error("Supabase mengembalikan status izin penambahan karyawan tamu yang tidak valid.");
+      throw new Error("Supabase mengembalikan status izin penambahan pekerja tamu yang tidak valid.");
     }
     guestEmployeeCreationEnabled = guestEmployeeCreationRes.data;
   } catch (err) {
@@ -5551,7 +5551,7 @@ function bindEvents() {
     const employeeId = document.querySelector("#profile-employee").value;
     const whatsapp = document.querySelector("#profile-whatsapp").value;
     if (!employees.some((employee) => employee.id === employeeId && employee.department_id === departmentId)) {
-      showToast("Pilih nama karyawan yang sesuai dengan fungsi.", true);
+      showToast("Pilih nama pekerja yang sesuai dengan fungsi.", true);
       return;
     }
     if (!isValidWhatsApp(whatsapp)) {
@@ -5642,23 +5642,23 @@ function bindEvents() {
           : await loadGuestEmployeeCreationSetting();
         if (!allowed) {
           showToast(currentProfile?.role === "hr"
-            ? "HR tidak diizinkan menambah karyawan baru."
+            ? "HR tidak diizinkan menambah pekerja baru."
             : "Penambahan nama belum diaktifkan.", true);
           return;
         }
       } catch (error) {
         console.error("Could not verify HR employee-creation permission:", error);
-        showToast(`Gagal memverifikasi izin penambahan karyawan: ${error.message}`, true);
+        showToast(`Gagal memverifikasi izin penambahan pekerja: ${error.message}`, true);
         return;
       }
     }
     const canAddAsGuest = canAddGuestEmployee();
     if (currentProfile?.role === "hr" && !hrEmployeeCreationEnabled) {
-      showToast("HR tidak diizinkan menambah karyawan baru.", true);
+      showToast("HR tidak diizinkan menambah pekerja baru.", true);
       return;
     }
     if (!canAddAuthenticatedEmployee() && !canAddAsGuest) {
-      showToast("Hubungi HR untuk menambahkan karyawan.", true);
+      showToast("Hubungi HR untuk menambahkan pekerja.", true);
       return;
     }
     const departmentId = guestMode && !document.querySelector("#profile-tab").classList.contains("hidden")
@@ -5674,19 +5674,19 @@ function bindEvents() {
           : await loadGuestEmployeeCreationSetting();
         if (!allowed) {
           showToast(currentProfile?.role === "hr"
-            ? "HR tidak diizinkan menambah karyawan baru."
+            ? "HR tidak diizinkan menambah pekerja baru."
             : "Penambahan nama belum diaktifkan.", true);
           return;
         }
       } catch (error) {
         console.error("Could not verify employee-creation permission:", error);
-        showToast(`Gagal memverifikasi izin penambahan karyawan: ${error.message}`, true);
+        showToast(`Gagal memverifikasi izin penambahan pekerja: ${error.message}`, true);
         return;
       }
     }
     const canAddAsGuest = canAddGuestEmployee();
     if (!canAddAuthenticatedEmployee() && !canAddAsGuest) {
-      showToast("Penambahan karyawan belum diizinkan.", true);
+      showToast("Penambahan pekerja belum diizinkan.", true);
       return;
     }
     const departmentId = document.querySelector("#profile-department").value;
