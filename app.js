@@ -3921,7 +3921,7 @@ function renderHistory() {
     const status = statusDetails[checkup.readiness_status] ?? statusDetails.need_observation;
     const employee = checkup.employees;
     const symptoms = Object.entries(checkup.symptoms ?? {})
-      .filter(([key, selected]) => selected && !Object.values(substanceQuestionKeys).includes(key))
+      .filter(([key, selected]) => selected && key !== "fit" && !Object.values(substanceQuestionKeys).includes(key))
       .map(([key]) => symptomLabels[key] ?? key);
     const substanceAnswers = [
       [substanceQuestionKeys.medication, "Konsumsi obat-obatan yang menyebabkan kantuk dalam 24 jam terakhir"],
@@ -3949,6 +3949,7 @@ function renderHistory() {
         <p><span class="block text-slate-400">Kelelahan / tidur</span><b class="mt-1 block text-slate-700">${checkup.fatigue_level} / ${checkup.sleep_hours != null ? `${checkup.sleep_hours} jam` : `${checkup.sleep_quality ?? "—"}/5 (data lama)`}</b></p>
       </div>
       ${symptoms.length ? `<p class="mt-3 text-xs leading-5 text-slate-500"><b class="text-slate-600">Gejala:</b> ${escapeHtml(symptoms.join(", "))}</p>` : ""}
+      ${checkup.symptoms?.fit === true ? `<p class="mt-2 text-xs leading-5 text-slate-500"><b class="text-slate-600">Penilaian diri:</b> ${escapeHtml(symptomLabels.fit)}</p>` : ""}
       ${substanceAnswers.length ? `<div class="mt-3 space-y-1 text-xs leading-5 text-slate-500">${substanceAnswers.map(([key, label]) => `<p><b class="text-slate-600">${label}:</b> ${checkup.symptoms[key] ? "Ya" : "Tidak"}</p>`).join("")}</div>` : ""}
       ${checkup.measurement_provider ? `<p class="mt-2 text-xs leading-5 text-slate-500"><b class="text-slate-600">Tenaga medis:</b> ${escapeHtml(checkup.measurement_provider)}</p>` : ""}
       ${checkup.notes ? `<p class="mt-2 whitespace-pre-wrap break-words text-xs leading-5 text-slate-500">${escapeHtml(checkup.notes)}</p>` : ""}
@@ -4102,7 +4103,7 @@ function reportText(payload, status, checkedAt, employeeName, departmentName) {
     "fainting"
   ]);
   const symptomNames = Object.entries(payload.symptoms || {})
-    .filter(([key, selected]) => selected && !Object.values(substanceQuestionKeys).includes(key))
+    .filter(([key, selected]) => selected && key !== "fit" && !Object.values(substanceQuestionKeys).includes(key))
     .map(([key]) => {
       const label = symptomLabels[key];
       return label ? (triggerSymptoms.has(key) ? `*${label}*` : label) : null;
@@ -4150,6 +4151,7 @@ Halo {{employee_name}}, terima kasih telah mengisi pemeriksaan kesehatan harian.
 • Kelelahan: {{fatigue_level}}/5
 • Jumlah Jam Tidur: {{sleep_hours}} jam
 • Gejala: {{symptoms}}
+{{self_assessment}}
 • Catatan: {{notes}}
 
 *Petunjuk K3:*
@@ -4167,6 +4169,7 @@ Halo {{employee_name}}, terima kasih telah mengisi pemeriksaan kesehatan harian.
     fatigue_level: String(payload.fatigue_level),
     sleep_hours: formattedSleepHours,
     symptoms: symptomNames.length ? symptomNames.join(", ") : "Tidak ada keluhan",
+    self_assessment: payload.symptoms?.fit === true ? "• Penilaian diri: Sehat / Fit" : "",
     notes: payload.notes?.trim() || "-",
     instructions
   });
