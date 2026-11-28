@@ -3555,7 +3555,7 @@ async function syncOfflineQueue(showToastNotice = false) {
       }
 
       const checkupId = savedCheckup?.id || savedCheckup?.checkup_id;
-      if (checkupId && item.whatsapp) {
+      if (checkupId) {
         dispatchWhatsAppNotification(checkupId, item.whatsapp);
       }
 
@@ -4232,12 +4232,12 @@ async function copyReport() {
 }
 
 async function dispatchWhatsAppNotification(checkupId, employeePhone) {
-  if (!checkupId || !employeePhone || !client?.functions) return;
+  if (!checkupId || !client?.functions) return;
   try {
     const { data, error } = await client.functions.invoke("send-wa-notification", {
       body: {
         checkup_id: checkupId,
-        employee_phone: employeePhone
+        employee_phone: employeePhone || null
       }
     });
     if (error) {
@@ -4424,7 +4424,7 @@ async function submitCheckup(event) {
     const checkupId = savedCheckup?.id || savedCheckup?.checkup_id;
     await syncWhatsAppNotificationSetting();
     showResult(payload, savedCheckup.readiness_status, savedCheckup.checked_at, false);
-    if (checkupId && employeePhone) {
+    if (checkupId) {
       dispatchWhatsAppNotification(checkupId, employeePhone);
     }
     const checkupPhone = document.querySelector("#checkup-whatsapp").value;
